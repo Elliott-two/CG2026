@@ -2,6 +2,7 @@
 #include "RedNoiseRenderer.h"
 #include "BlueNoiseRenderer.h"
 #include "GreenNoiseRenderer.h"
+#include "WhiteNoiseRenderer.h"
 #include "ColourSpectrumRenderer.h"
 #include <fstream>
 #include <vector>
@@ -14,7 +15,8 @@ DrawingWindow window = DrawingWindow(WIDTH, HEIGHT);
 RedNoiseRenderer redNoise = RedNoiseRenderer();
 GreenNoiseRenderer greenNoise = GreenNoiseRenderer();
 BlueNoiseRenderer blueNoise = BlueNoiseRenderer();
-Renderer *currentRenderer = &greenNoise;
+WhiteNoiseRenderer whiteNoise = WhiteNoiseRenderer();
+Renderer *currentRenderer = &whiteNoise; // Start with white noise renderer as default
 bool savingFrames = false;
 int frameCounter = 0;
 
@@ -52,18 +54,13 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 			std::cout << "Turning Blue" << std::endl;
 			currentRenderer = &blueNoise;
 		}
-
+		else if (event.key.keysym.sym == SDLK_w)
+		{
+			std::cout << "Turning White" << std::endl;
+			currentRenderer = &whiteNoise;
+		}
 		else if (event.key.keysym.sym == SDLK_c)
 			currentRenderer = new ColourSpectrumRenderer();
-		else if (event.key.keysym.sym == SDLK_r)
-			std::cout
-				<< "R" << std::endl;
-		else if (event.key.keysym.sym == SDLK_g)
-			std::cout
-				<< "G" << std::endl;
-		else if (event.key.keysym.sym == SDLK_b)
-			std::cout
-				<< "B" << std::endl;
 		else if (event.key.keysym.sym == SDLK_u)
 			std::cout
 				<< "U" << std::endl;
@@ -74,6 +71,44 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 			savingFrames = !savingFrames;
 		else if (event.key.keysym.sym == SDLK_RETURN)
 			window.toggleFullscreen();
+		else if (event.key.keysym.sym == SDLK_1)
+		{
+			currentRenderer->adjustRed(+5);
+			std::cout
+				<< "Increase Red" << std::endl;
+		}
+		else if (event.key.keysym.sym == SDLK_2)
+		{
+			currentRenderer->adjustRed(-5);
+			std::cout
+				<< "Decrease Red" << std::endl;
+		}
+		else if (event.key.keysym.sym == SDLK_3)
+		{
+			currentRenderer->adjustBlue(+5);
+			std::cout
+				<< "Increase Blue" << std::endl;
+		}
+
+		else if (event.key.keysym.sym == SDLK_4)
+		{
+			currentRenderer->adjustBlue(-5);
+			std::cout
+				<< "Decrease Blue" << std::endl;
+		}
+		else if (event.key.keysym.sym == SDLK_5)
+		{
+			currentRenderer->adjustGreen(+5);
+			std::cout
+				<< "Increase Green" << std::endl;
+		}
+
+		else if (event.key.keysym.sym == SDLK_6)
+		{
+			currentRenderer->adjustGreen(-5);
+			std::cout
+				<< "Decrease Green" << std::endl;
+		}
 	}
 }
 

@@ -8,7 +8,7 @@ void GreenNoiseRenderer::draw(DrawingWindow &window)
         for (size_t x = 0; x < window.width; x++)
         {
             float red = 0.0;
-            float green = rand() % 256;
+            float green = rand() % (greenMax + 1);
             float blue = 0.0;
             uint32_t colour = (255 << 24) + (int(red) << 16) + (int(green) << 8) + int(blue);
             window.setPixelColour(x, y, colour);

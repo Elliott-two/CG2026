@@ -10,7 +10,16 @@
 extern const int WIDTH;
 extern const int HEIGHT;
 
-class Renderer {
-   public:
-      virtual void draw(DrawingWindow &window);
+class Renderer
+{
+protected:
+   int redMax = 255;
+   int greenMax = 255;
+   int blueMax = 255;
+
+public:
+   virtual void draw(DrawingWindow &window);
+   void adjustRed(int delta);
+   void adjustGreen(int delta);
+   void adjustBlue(int delta);
 };
