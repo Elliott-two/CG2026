@@ -22,4 +22,6 @@ public:
    void adjustRed(int delta);
    void adjustGreen(int delta);
    void adjustBlue(int delta);
+   std::vector<float> interpolateSingleFloats(float from, float to, int numberOfValues);
+   std::vector<glm::vec3> interpolateThreeElementValues(glm::vec3 from, glm::vec3 to, int numberOfValues);
 };

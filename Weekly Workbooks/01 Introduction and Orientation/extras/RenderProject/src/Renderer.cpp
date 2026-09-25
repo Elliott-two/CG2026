@@ -27,3 +27,25 @@ void Renderer::adjustBlue(int delta)
     if (blueMax > 255)
         blueMax = 255;
 }
+
+std::vector<float> Renderer::interpolateSingleFloats(float from, float to, int numberOfValues)
+{
+    std::vector<float> values;
+    float step = (to - from) / (numberOfValues - 1);
+    for (int i = 0; i < numberOfValues; i++)
+    {
+        values.push_back(from + step * i);
+    }
+    return values;
+}
+
+std::vector<glm::vec3> Renderer::interpolateThreeElementValues(glm::vec3 from, glm::vec3 to, int numberOfValues)
+{
+    std::vector<glm::vec3> values;
+    glm::vec3 step = (to - from) / float(numberOfValues - 1);
+    for (int i = 0; i < numberOfValues; i++)
+    {
+        values.push_back(from + step * float(i));
+    }
+    return values;
+}

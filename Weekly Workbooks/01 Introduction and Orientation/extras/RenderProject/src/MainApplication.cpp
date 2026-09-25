@@ -4,6 +4,7 @@
 #include "GreenNoiseRenderer.h"
 #include "WhiteNoiseRenderer.h"
 #include "ColourSpectrumRenderer.h"
+#include "TriangleSpectrumRenderer.h"
 #include <fstream>
 #include <vector>
 
@@ -16,8 +17,12 @@ RedNoiseRenderer redNoise = RedNoiseRenderer();
 GreenNoiseRenderer greenNoise = GreenNoiseRenderer();
 BlueNoiseRenderer blueNoise = BlueNoiseRenderer();
 WhiteNoiseRenderer whiteNoise = WhiteNoiseRenderer();
-Renderer *currentRenderer = &whiteNoise; // Start with white noise renderer as default
+ColourSpectrumRenderer colourSpectrum = ColourSpectrumRenderer();
+TriangleSpectrumRenderer triangleSpectrum = TriangleSpectrumRenderer();
+
+Renderer *currentRenderer = &colourSpectrum; // Start with colour spectrum renderer as default
 bool savingFrames = false;
+
 int frameCounter = 0;
 
 // Core 3D rendering data structures (for when we eventually get around to working in 3D ;o)
@@ -39,6 +44,16 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 			std::cout << "UP" << std::endl;
 		else if (event.key.keysym.sym == SDLK_DOWN)
 			std::cout << "DOWN" << std::endl;
+		else if (event.key.keysym.sym == SDLK_c)
+		{
+			std::cout << "Turning Colour Spectrum" << std::endl;
+			currentRenderer = &colourSpectrum;
+		}
+		else if (event.key.keysym.sym == SDLK_t)
+		{
+			std::cout << "Turning Triangle Spectrum" << std::endl;
+			currentRenderer = &triangleSpectrum;
+		}
 		else if (event.key.keysym.sym == SDLK_r)
 		{
 			std::cout << "Turning Red" << std::endl;
@@ -114,6 +129,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 
 int main(int argc, char *argv[])
 {
+
 	SDL_Event event;
 	while (true)
 	{
