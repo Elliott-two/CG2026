@@ -13,6 +13,8 @@ extern const int WIDTH = 1080;
 extern const int HEIGHT = 720;
 
 DrawingWindow window = DrawingWindow(WIDTH, HEIGHT);
+
+// Create instances of each renderer
 RedNoiseRenderer redNoise = RedNoiseRenderer();
 GreenNoiseRenderer greenNoise = GreenNoiseRenderer();
 BlueNoiseRenderer blueNoise = BlueNoiseRenderer();
@@ -21,6 +23,8 @@ ColourSpectrumRenderer colourSpectrum = ColourSpectrumRenderer();
 TriangleSpectrumRenderer triangleSpectrum = TriangleSpectrumRenderer();
 
 Renderer *currentRenderer = &colourSpectrum; // Start with colour spectrum renderer as default
+
+// Unnecessary for now
 bool savingFrames = false;
 
 int frameCounter = 0;
@@ -45,36 +49,6 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 		else if (event.key.keysym.sym == SDLK_DOWN)
 			std::cout << "DOWN" << std::endl;
 		else if (event.key.keysym.sym == SDLK_c)
-		{
-			std::cout << "Turning Colour Spectrum" << std::endl;
-			currentRenderer = &colourSpectrum;
-		}
-		else if (event.key.keysym.sym == SDLK_t)
-		{
-			std::cout << "Turning Triangle Spectrum" << std::endl;
-			currentRenderer = &triangleSpectrum;
-		}
-		else if (event.key.keysym.sym == SDLK_r)
-		{
-			std::cout << "Turning Red" << std::endl;
-			currentRenderer = &redNoise;
-		}
-		else if (event.key.keysym.sym == SDLK_g)
-		{
-			std::cout << "Turning Green" << std::endl;
-			currentRenderer = &greenNoise;
-		}
-		else if (event.key.keysym.sym == SDLK_b)
-		{
-			std::cout << "Turning Blue" << std::endl;
-			currentRenderer = &blueNoise;
-		}
-		else if (event.key.keysym.sym == SDLK_w)
-		{
-			std::cout << "Turning White" << std::endl;
-			currentRenderer = &whiteNoise;
-		}
-		else if (event.key.keysym.sym == SDLK_c)
 			currentRenderer = new ColourSpectrumRenderer();
 		else if (event.key.keysym.sym == SDLK_u)
 			std::cout
@@ -86,18 +60,59 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 			savingFrames = !savingFrames;
 		else if (event.key.keysym.sym == SDLK_RETURN)
 			window.toggleFullscreen();
+
+		// Switch between renderers based on key presses
+		else if (event.key.keysym.sym == SDLK_c)
+		{
+			std::cout << "Turning Colour Spectrum" << std::endl;
+			currentRenderer = &colourSpectrum;
+		}
+
+		else if (event.key.keysym.sym == SDLK_t)
+		{
+			std::cout << "Turning Triangle Spectrum" << std::endl;
+			currentRenderer = &triangleSpectrum;
+		}
+
+		else if (event.key.keysym.sym == SDLK_r)
+		{
+			std::cout << "Turning Red" << std::endl;
+			currentRenderer = &redNoise;
+		}
+
+		else if (event.key.keysym.sym == SDLK_g)
+		{
+			std::cout << "Turning Green" << std::endl;
+			currentRenderer = &greenNoise;
+		}
+
+		else if (event.key.keysym.sym == SDLK_b)
+		{
+			std::cout << "Turning Blue" << std::endl;
+			currentRenderer = &blueNoise;
+		}
+
+		else if (event.key.keysym.sym == SDLK_w)
+		{
+			std::cout << "Turning White" << std::endl;
+			currentRenderer = &whiteNoise;
+		}
+
+		// Adjust the RGB values based on key presses
 		else if (event.key.keysym.sym == SDLK_1)
 		{
 			currentRenderer->adjustRed(+5);
 			std::cout
 				<< "Increase Red" << std::endl;
 		}
+
 		else if (event.key.keysym.sym == SDLK_2)
 		{
 			currentRenderer->adjustRed(-5);
 			std::cout
 				<< "Decrease Red" << std::endl;
 		}
+
 		else if (event.key.keysym.sym == SDLK_3)
 		{
 			currentRenderer->adjustBlue(+5);
@@ -111,6 +126,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 			std::cout
 				<< "Decrease Blue" << std::endl;
 		}
+
 		else if (event.key.keysym.sym == SDLK_5)
 		{
 			currentRenderer->adjustGreen(+5);

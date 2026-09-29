@@ -7,7 +7,6 @@ void ColourSpectrumRenderer::draw(DrawingWindow &window)
    glm::vec3 topRight(0, 0, 255);     // blue
    glm::vec3 bottomLeft(255, 255, 0); // yellow
    glm::vec3 bottomRight(0, 255, 0);  // green
-   int ALPHA = 255;
    for (size_t y = 0; y < window.height; y++)
    {
       float yRatio = float(y) / float(window.height - 1);

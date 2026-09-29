@@ -10,7 +10,7 @@ void RedNoiseRenderer::draw(DrawingWindow &window)
 			float red = rand() % (redMax + 1);
 			float green = 0.0;
 			float blue = 0.0;
-			uint32_t colour = (255 << 24) + (int(red) << 16) + (int(green) << 8) + int(blue);
+			uint32_t colour = (ALPHA << 24) + (int(red) << 16) + (int(green) << 8) + int(blue);
 			window.setPixelColour(x, y, colour);
 		}
 	}

@@ -16,6 +16,7 @@ protected:
    int redMax = 255;
    int greenMax = 255;
    int blueMax = 255;
+   const int ALPHA = 255; // Fully opaque, unchanged in this course
 
 public:
    virtual void draw(DrawingWindow &window);
