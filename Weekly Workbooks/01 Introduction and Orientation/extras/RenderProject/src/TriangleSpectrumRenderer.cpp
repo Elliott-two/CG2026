@@ -6,7 +6,7 @@ void TriangleSpectrumRenderer::draw(DrawingWindow &window)
     glm::vec3 bottomLeft(255, 0, 0);  // red
     glm::vec3 topMiddle(0, 255, 0);   // green
     glm::vec3 bottomRight(0, 0, 255); // blue
-
+    int alpha = 255;                  // Fully opaque
     for (int y = 0; y < window.height; ++y)
     {
         for (int x = 0; x < window.width; ++x)
@@ -19,7 +19,7 @@ void TriangleSpectrumRenderer::draw(DrawingWindow &window)
             glm::vec3 barycentricCoords = convertToBarycentricCoordinates(v0, v1, v2, p);
             if (barycentricCoords.x < 0 || barycentricCoords.y < 0 || barycentricCoords.z < 0)
             {
-                // Pixel is outside the triangle, skip it
+                // Pixel is outside the triangle
                 continue;
             }
             // Interpolate the color based on the barycentric coordinates
@@ -29,9 +29,10 @@ void TriangleSpectrumRenderer::draw(DrawingWindow &window)
                 barycentricCoords.z * topMiddle;
 
             // Set the pixel color in the window
-            uint32_t pixelColor = (static_cast<uint32_t>(color.r) << 16) |
-                                  (static_cast<uint32_t>(color.g) << 8) |
-                                  static_cast<uint32_t>(color.b);
+            uint32_t pixelColor = (alpha << 24) |
+                                  (static_cast<uint8_t>(color.r) << 16) |
+                                  (static_cast<uint8_t>(color.g) << 8) |
+                                  (static_cast<uint8_t>(color.b));
             window.setPixelColour(x, y, pixelColor);
         }
     }
