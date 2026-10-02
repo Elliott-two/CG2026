@@ -5,12 +5,16 @@
 #include "WhiteNoiseRenderer.h"
 #include "ColourSpectrumRenderer.h"
 #include "TriangleSpectrumRenderer.h"
+#include "RasterisedRenderer.h"
 #include <fstream>
 #include <vector>
 
 // Define globals for WIDTH and HEIGHT of the window (can be accessed from any renderer)
-extern const int WIDTH = 1080;
-extern const int HEIGHT = 720;
+extern const int WIDTH = 1000;
+extern const int HEIGHT = 1000;
+
+TextureMap textureMap(
+	"../../../03 Triangles and Textures/texture.ppm");
 
 DrawingWindow window = DrawingWindow(WIDTH, HEIGHT);
 
@@ -21,8 +25,9 @@ BlueNoiseRenderer blueNoise = BlueNoiseRenderer();
 WhiteNoiseRenderer whiteNoise = WhiteNoiseRenderer();
 ColourSpectrumRenderer colourSpectrum = ColourSpectrumRenderer();
 TriangleSpectrumRenderer triangleSpectrum = TriangleSpectrumRenderer();
+RasterisedRenderer rasterisedRenderer = RasterisedRenderer();
 
-Renderer *currentRenderer = &colourSpectrum; // Start with colour spectrum renderer as default
+Renderer *currentRenderer = &rasterisedRenderer; // Start with rasterised renderer as default
 
 // Unnecessary for now
 bool savingFrames = false;
@@ -40,28 +45,34 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 {
 	if (event.type == SDL_KEYDOWN)
 	{
-		if (event.key.keysym.sym == SDLK_LEFT)
-			std::cout << "LEFT" << std::endl;
-		else if (event.key.keysym.sym == SDLK_RIGHT)
-			std::cout << "RIGHT" << std::endl;
-		else if (event.key.keysym.sym == SDLK_UP)
-			std::cout << "UP" << std::endl;
-		else if (event.key.keysym.sym == SDLK_DOWN)
-			std::cout << "DOWN" << std::endl;
-		else if (event.key.keysym.sym == SDLK_c)
-			currentRenderer = new ColourSpectrumRenderer();
-		else if (event.key.keysym.sym == SDLK_u)
-			std::cout
-				<< "U" << std::endl;
+		if (event.key.keysym.sym == SDLK_u)
+		{
+			std::cout << "Drawing Stroked Triangles" << std::endl;
+			rasterisedRenderer.drawStrokedTriangles(window);
+		}
 		else if (event.key.keysym.sym == SDLK_f)
-			std::cout
-				<< "F" << std::endl;
-		else if (event.key.keysym.sym == SDLK_TAB)
-			savingFrames = !savingFrames;
-		else if (event.key.keysym.sym == SDLK_RETURN)
-			window.toggleFullscreen();
+		{
+			std::cout << "Drawing Filled Triangles" << std::endl;
+			rasterisedRenderer.filledTriangle(window);
+		}
+		else if (event.key.keysym.sym == SDLK_BACKSPACE)
+		{
+			std::cout << "Clearing Pixels" << std::endl;
+			rasterisedRenderer.clearPixels(window);
+		}
+		else if (event.key.keysym.sym == SDLK_t)
+		{
+			std::cout << "Drawing Textured Triangles" << std::endl;
+			rasterisedRenderer.texturedTriangle(window, textureMap);
+		}
 
 		// Switch between renderers based on key presses
+		else if (event.key.keysym.sym == SDLK_p)
+		{
+			std::cout << "Turning Rasterised Renderer" << std::endl;
+			currentRenderer = &rasterisedRenderer;
+			rasterisedRenderer.clearPixels(window); // Clear the window when switching to rasterised renderer
+		}
 		else if (event.key.keysym.sym == SDLK_c)
 		{
 			std::cout << "Turning Colour Spectrum" << std::endl;

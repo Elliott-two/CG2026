@@ -5,6 +5,9 @@
 #include <glm/glm.hpp>
 #include <Colour.h>
 #include <Utils.h>
+#include <CanvasPoint.h>
+#include <CanvasTriangle.h>
+#include <TextureMap.h>
 
 // Use the external WIDTH and HEIGHT values defined in the MainApplication file
 extern const int WIDTH;

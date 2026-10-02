@@ -1,5 +1,6 @@
 #include "Renderer.h"
-
+#include "CanvasPoint.h"
+#include "Colour.h"
 void Renderer::draw(DrawingWindow &window)
 {
 }
