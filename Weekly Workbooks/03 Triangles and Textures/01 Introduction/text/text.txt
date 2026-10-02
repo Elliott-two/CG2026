@@ -1,0 +1,5 @@
+Although we are still working primarily in 2 dimensions, the aim of this week's workbook is to build up a collection of useful drawing functions that can be used later on in the unit. Much of the later work in future workbooks will be in 3D. However, as we shall soon see, we will still need to do a lot of 2D drawing (strange but true). After all, screens/displays are by their very nature two dimensional !
+
+In order to complete this week's workbook, you should create a new subclass of the generic `Renderer` class called `RasterisedRenderer` (creating both `.cpp` and `.h` files as appropriate). Any code that you write to complete the tasks in this workbook should appear in these files.
+
+**Important:** Make sure you read the "Hints and Tips" at the end of each section before attempting that task. This might save you a lot of time and anguish !
