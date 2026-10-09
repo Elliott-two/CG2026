@@ -12,9 +12,14 @@ public:
     // Drawing tools
     void simpleLine(CanvasPoint from, CanvasPoint to, Colour colour, DrawingWindow &window);
     CanvasTriangle randomTrianglePointsSorted(DrawingWindow &window);
+    CanvasTriangle trianglePointsSorted(DrawingWindow &window, CanvasTriangle triangle);
     float calculateXIntersection(CanvasPoint bottom, CanvasPoint top, float middlePointY);
     CanvasPoint interpolateCanvasPoint(CanvasPoint from, CanvasPoint to, float y);
 
+    // Depth
+    std::vector<float> depthBuffer;
+    void resetDepthBuffer();
+    void fillScanline(CanvasPoint left, CanvasPoint right, int y, Colour colour, DrawingWindow &window);
     // Shapes
 
     // First Shape
@@ -27,7 +32,7 @@ public:
     // Filled Triangles
     void fillFlatBottomTriangle(CanvasTriangle triangle, Colour colour, DrawingWindow &window);
     void fillFlatTopTriangle(CanvasTriangle triangle, Colour colour, DrawingWindow &window);
-    void filledTriangle(DrawingWindow &window);
+    void filledTriangle(DrawingWindow &window, CanvasTriangle triangle, Colour colour);
 
     // Textured Triangles
     void textureFlatBottomTriangle(CanvasTriangle triangle, TextureMap &textureMap, DrawingWindow &window);

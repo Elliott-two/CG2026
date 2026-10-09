@@ -53,6 +53,17 @@ CanvasTriangle RasterisedRenderer::randomTrianglePointsSorted(DrawingWindow &win
     return CanvasTriangle(rand1, rand2, rand3);
 }
 
+CanvasTriangle RasterisedRenderer::trianglePointsSorted(DrawingWindow &window, CanvasTriangle triangle)
+{
+    if (triangle.v0().y > triangle.v1().y)
+        std::swap(triangle.v0(), triangle.v1());
+    if (triangle.v1().y > triangle.v2().y)
+        std::swap(triangle.v1(), triangle.v2());
+    if (triangle.v0().y > triangle.v1().y)
+        std::swap(triangle.v0(), triangle.v1());
+    return triangle;
+}
+
 // Calculate the x-coordinate of the intersection point of a line segment defined by two points (bottom and top) with a horizontal line at a given y-coordinate (middlePointY)
 float RasterisedRenderer::calculateXIntersection(CanvasPoint bottom, CanvasPoint top, float middlePointY)
 {
@@ -93,7 +104,41 @@ CanvasPoint RasterisedRenderer::interpolateCanvasPoint(CanvasPoint from, CanvasP
 
     point.texturePoint.y = from.texturePoint.y + ratio * (to.texturePoint.y - from.texturePoint.y);
 
+    point.depth = from.depth + ratio * (to.depth - from.depth);
     return point;
+}
+
+void RasterisedRenderer::resetDepthBuffer()
+{
+    depthBuffer.assign(WIDTH * HEIGHT, 0.0f); // 0 = infinitely far away
+}
+
+void RasterisedRenderer::fillScanline(CanvasPoint left, CanvasPoint right, int y, Colour colour, DrawingWindow &window)
+{
+    if (y < 0 || y >= HEIGHT)
+        return;
+    if (left.x > right.x)
+        std::swap(left, right);
+
+    uint32_t packed = (255u << 24) | (colour.red << 16) | (colour.green << 8) | colour.blue;
+    int xStart = static_cast<int>(std::round(left.x));
+    int xEnd = static_cast<int>(std::round(right.x));
+
+    for (int x = xStart; x <= xEnd; x++)
+    {
+        if (x < 0 || x >= WIDTH)
+            continue;
+
+        float t = (xEnd == xStart) ? 0.0f : static_cast<float>(x - xStart) / (xEnd - xStart);
+        float depth = left.depth + t * (right.depth - left.depth);
+
+        int i = y * WIDTH + x;
+        if (depth > depthBuffer[i]) // closer than what's already there
+        {
+            depthBuffer[i] = depth;
+            window.setPixelColour(x, y, packed);
+        }
+    }
 }
 
 void RasterisedRenderer::drawFirstShape(DrawingWindow &window)
@@ -152,69 +197,37 @@ void RasterisedRenderer::drawStrokedTriangles(DrawingWindow &window)
     strokedTriangle(triangle, colour, window);
 }
 
-// Function that fills a triangle with a flat bottom by iterating through the y-coordinates and calculating the x-intersections of the triangle edges
 void RasterisedRenderer::fillFlatBottomTriangle(CanvasTriangle triangle, Colour colour, DrawingWindow &window)
 {
-    // Calculate the starting and ending y-coordinates for the triangle
-    // Used static_cast<int> and std::round to ensure proper rounding of the y-coordinates
     int yStart = static_cast<int>(std::round(triangle.v0().y));
     int yEnd = static_cast<int>(std::round(triangle.v1().y));
 
-    // Iterate through the y-coordinates from yStart to yEnd
     for (int y = yStart; y <= yEnd; y++)
     {
-        // Calculate the current y-coordinate as a float for interpolation
-        // Used static_cast<float> to ensure proper type conversion
-        float currentY = static_cast<float>(y);
-
-        // Calculate the x-intersections of the triangle edges with the current y-coordinate
-        int xIntersection1 = calculateXIntersection(triangle.v0(), triangle.v1(), currentY);
-        int xIntersection2 = calculateXIntersection(triangle.v0(), triangle.v2(), currentY);
-
-        // Determine the starting and ending x-coordinates for the current scanline
-        // Using std::min and std::max to ensure proper ordering of the x-coordinates
-        int xStart = std::min(xIntersection1, xIntersection2);
-        int xEnd = std::max(xIntersection1, xIntersection2);
-
-        // Iterate through the x-coordinates from xStart to xEnd and set the pixel colors for the current scanline
-        for (int x = xStart; x <= xEnd; x++)
-        {
-            window.setPixelColour(x, y, (colour.red << 16) | (colour.green << 8) | colour.blue);
-        }
+        CanvasPoint left = interpolateCanvasPoint(triangle.v0(), triangle.v1(), y);
+        CanvasPoint right = interpolateCanvasPoint(triangle.v0(), triangle.v2(), y);
+        fillScanline(left, right, y, colour, window);
     }
 }
 
-// Function that fills a triangle with a flat top by iterating through the y-coordinates and calculating the x-intersections of the triangle edges
 void RasterisedRenderer::fillFlatTopTriangle(CanvasTriangle triangle, Colour colour, DrawingWindow &window)
 {
-    // This is the only change from the previous function, as the triangle is now flat on the top so we take diffrent vertices to calculate the x-intersections of the triangle edges with the current y-coordinate
     int yStart = static_cast<int>(std::round(triangle.v0().y));
     int yEnd = static_cast<int>(std::round(triangle.v2().y));
 
     for (int y = yStart; y <= yEnd; y++)
     {
-        float currentY = static_cast<float>(y);
-        int xIntersection1 = calculateXIntersection(triangle.v0(), triangle.v2(), currentY);
-        int xIntersection2 = calculateXIntersection(triangle.v1(), triangle.v2(), currentY);
-
-        int xStart = std::min(xIntersection1, xIntersection2);
-        int xEnd = std::max(xIntersection1, xIntersection2);
-
-        for (int x = xStart; x <= xEnd; x++)
-        {
-            window.setPixelColour(x, y, (colour.red << 16) | (colour.green << 8) | colour.blue);
-        }
+        CanvasPoint left = interpolateCanvasPoint(triangle.v0(), triangle.v2(), y);
+        CanvasPoint right = interpolateCanvasPoint(triangle.v1(), triangle.v2(), y);
+        fillScanline(left, right, y, colour, window);
     }
 }
 
 // Function that fills a triangle by splitting it into two flat-bottom and flat-top triangles and filling them separately
-void RasterisedRenderer::filledTriangle(DrawingWindow &window)
+void RasterisedRenderer::filledTriangle(DrawingWindow &window, CanvasTriangle triangle, Colour colour)
 {
-    // Generate a random colour for the triangle
-    Colour colour(rand() % 256, rand() % 256, rand() % 256);
-
     // Generate a random triangle with sorted vertices based on their y-coordinates
-    CanvasTriangle sortedTriangle = randomTrianglePointsSorted(window);
+    CanvasTriangle sortedTriangle = trianglePointsSorted(window, triangle);
 
     // Assign the vertices of the sorted triangle to top, middle, and bottom points for easier reference
     CanvasPoint top = sortedTriangle.v0();
@@ -222,7 +235,7 @@ void RasterisedRenderer::filledTriangle(DrawingWindow &window)
     CanvasPoint bottom = sortedTriangle.v2();
 
     // Calculate the x-coordinate of the intersection point of the line segment defined by the bottom and top points with a horizontal line at the y-coordinate of the middle point
-    CanvasPoint joiner(static_cast<float>(calculateXIntersection(bottom, top, middle.y)), middle.y);
+    CanvasPoint joiner = interpolateCanvasPoint(top, bottom, middle.y);
 
     // Create two new triangles: one with a flat bottom and one with a flat top, using the joiner point as the shared vertex
     CanvasTriangle flatBottomTriangle(top, middle, joiner);
@@ -235,9 +248,6 @@ void RasterisedRenderer::filledTriangle(DrawingWindow &window)
 
     // Fill the flat-top triangle with the generated colour
     fillFlatTopTriangle(flatTopTriangle, colour, window);
-
-    // Draw the outline of the triangle using the strokedTriangle function
-    strokedTriangle(sortedTriangle, Colour(255, 255, 255), window);
 }
 
 // Function that draws a textured triangle by splitting it into two flat-bottom and flat-top triangles and filling them separately with texture mapping

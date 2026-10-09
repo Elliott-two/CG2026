@@ -6,8 +6,12 @@
 #include "ColourSpectrumRenderer.h"
 #include "TriangleSpectrumRenderer.h"
 #include "RasterisedRenderer.h"
-#include <fstream>
+#include "PointCloudRenderer.h"
 #include <vector>
+#include <unistd.h>
+#include <iostream>
+#include <fstream>
+#include <unordered_map>
 
 // Define globals for WIDTH and HEIGHT of the window (can be accessed from any renderer)
 extern const int WIDTH = 1000;
@@ -26,6 +30,7 @@ WhiteNoiseRenderer whiteNoise = WhiteNoiseRenderer();
 ColourSpectrumRenderer colourSpectrum = ColourSpectrumRenderer();
 TriangleSpectrumRenderer triangleSpectrum = TriangleSpectrumRenderer();
 RasterisedRenderer rasterisedRenderer = RasterisedRenderer();
+PointCloudRenderer pointCloud = PointCloudRenderer();
 
 Renderer *currentRenderer = &rasterisedRenderer; // Start with rasterised renderer as default
 
@@ -35,12 +40,14 @@ bool savingFrames = false;
 int frameCounter = 0;
 
 // Core 3D rendering data structures (for when we eventually get around to working in 3D ;o)
+std::string objFilename = "../../../04 Wireframes and Rasterising/models/cornell-box";
 std::vector<ModelTriangle> triangles;
 std::vector<Colour> palette;
+std::unordered_map<std::string, Colour> paletteMap;
+float focalLength = 2.0;
 glm::vec3 cameraPosition(0.0, 0.0, 4.0);
 glm::mat3 cameraOrientation;
 glm::vec3 lightPosition(0.0, 0.8, 0.0);
-
 void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = currentRenderer)
 {
 	if (event.type == SDL_KEYDOWN)
@@ -49,11 +56,6 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 		{
 			std::cout << "Drawing Stroked Triangles" << std::endl;
 			rasterisedRenderer.drawStrokedTriangles(window);
-		}
-		else if (event.key.keysym.sym == SDLK_f)
-		{
-			std::cout << "Drawing Filled Triangles" << std::endl;
-			rasterisedRenderer.filledTriangle(window);
 		}
 		else if (event.key.keysym.sym == SDLK_BACKSPACE)
 		{
@@ -79,7 +81,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 			currentRenderer = &colourSpectrum;
 		}
 
-		else if (event.key.keysym.sym == SDLK_t)
+		else if (event.key.keysym.sym == SDLK_m)
 		{
 			std::cout << "Turning Triangle Spectrum" << std::endl;
 			currentRenderer = &triangleSpectrum;
@@ -107,6 +109,11 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 		{
 			std::cout << "Turning White" << std::endl;
 			currentRenderer = &whiteNoise;
+		}
+		else if (event.key.keysym.sym == SDLK_k)
+		{
+			std::cout << "Turning Point Cloud" << std::endl;
+			currentRenderer = &pointCloud;
 		}
 
 		// Adjust the RGB values based on key presses
@@ -153,9 +160,117 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 		}
 	}
 }
+std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float scalingFactor)
+{
+	// Vector of Triangles
+	std::vector<ModelTriangle> modelTriangles;
+	// Vector of Vertices
+	std::vector<glm::vec3> vertices;
+
+	// ifstream
+	std::ifstream file(filename);
+	// Check working
+	if (!file.is_open())
+		return modelTriangles;
+
+	// string = to line
+	std::string line;
+	Colour colour(255, 255, 255);
+	// While getting lines
+	while (std::getline(file, line))
+	{
+		if (!line.empty() && line.back() == '\r')
+			line.pop_back();
+		if (line.empty())
+			continue;
+
+		std::vector<std::string> tokens = split(line, ' ');
+		if (tokens.empty() || tokens[0].empty())
+			continue;
+
+		const std::string &prefix = tokens[0];
+
+		if (prefix == "v" && tokens.size() >= 4)
+		{
+			vertices.push_back(glm::vec3(
+				std::stof(tokens[1]) * scalingFactor,
+				std::stof(tokens[2]) * scalingFactor,
+				std::stof(tokens[3]) * scalingFactor));
+		}
+		else if (prefix == "f" && tokens.size() >= 4)
+		{
+			int idx[3];
+			for (int i = 0; i < 3; i++)
+				idx[i] = std::stoi(split(tokens[i + 1], '/')[0]) - 1;
+
+			modelTriangles.push_back(ModelTriangle(
+				vertices[idx[0]], vertices[idx[1]], vertices[idx[2]],
+				colour));
+		}
+		else if (prefix == "usemtl" && tokens.size() >= 2)
+		{
+			auto it = paletteMap.find(tokens[1]);
+			if (it != paletteMap.end())
+			{
+				colour = it->second;
+			}
+		}
+	}
+
+	return modelTriangles;
+}
+
+std::vector<Colour> colourParseOBJ(const std::string &filename)
+{
+	std::vector<Colour> colours;
+
+	std::ifstream file(filename);
+	// Check working
+	if (!file.is_open())
+		return colours;
+
+	std::string line;
+	std::string colourName;
+	// While getting lines
+	while (std::getline(file, line))
+	{
+
+		if (!line.empty() && line.back() == '\r')
+			line.pop_back();
+		if (line.empty())
+			continue;
+
+		std::vector<std::string> tokens = split(line, ' ');
+		if (tokens.empty() || tokens[0].empty())
+			continue;
+
+		const std::string &prefix = tokens[0];
+
+		if (prefix == "newmtl" && tokens.size() >= 2)
+		{
+			colourName = tokens[1];
+		}
+		else if (prefix == "Kd" && tokens.size() >= 4)
+		{
+			colours.push_back(Colour(
+				colourName,
+				static_cast<int>(std::round(255 * std::stof(tokens[1]))),
+				static_cast<int>(std::round(255 * std::stof(tokens[2]))),
+				static_cast<int>(std::round(255 * std::stof(tokens[3])))));
+		}
+	}
+	return colours;
+}
 
 int main(int argc, char *argv[])
 {
+	palette = colourParseOBJ(objFilename + ".mtl");
+	for (int i = 0; i < palette.size(); i++)
+	{
+		paletteMap[palette[i].name] = palette[i];
+	}
+
+	triangles = triangleParseOBJ(objFilename + ".obj", 0.35f);
 
 	SDL_Event event;
 	while (true)
