@@ -12,7 +12,7 @@ public:
     // Drawing tools
     void simpleLine(CanvasPoint from, CanvasPoint to, Colour colour, DrawingWindow &window);
     CanvasTriangle randomTrianglePointsSorted(DrawingWindow &window);
-    CanvasTriangle trianglePointsSorted(DrawingWindow &window, CanvasTriangle triangle);
+    CanvasTriangle trianglePointsSorted(DrawingWindow &window, CanvasTriangle &triangle);
     float calculateXIntersection(CanvasPoint bottom, CanvasPoint top, float middlePointY);
     CanvasPoint interpolateCanvasPoint(CanvasPoint from, CanvasPoint to, float y);
 

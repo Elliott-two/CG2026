@@ -175,23 +175,35 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 
 	// string = to line
 	std::string line;
+
+	// Default Colour if doesn't work
 	Colour colour(255, 255, 255);
+
 	// While getting lines
 	while (std::getline(file, line))
 	{
+		// Check not empty and is a return therefore remove line
 		if (!line.empty() && line.back() == '\r')
+		{
 			line.pop_back();
+		}
+
+		// check empty, if so go next line
 		if (line.empty())
+		{
 			continue;
+		}
 
+		// Split into tokens
 		std::vector<std::string> tokens = split(line, ' ');
-		if (tokens.empty() || tokens[0].empty())
-			continue;
 
+		// Prefix is the first token
 		const std::string &prefix = tokens[0];
 
+		// Check vertex
 		if (prefix == "v" && tokens.size() >= 4)
 		{
+			// Push back and scaling
 			vertices.push_back(glm::vec3(
 				std::stof(tokens[1]) * scalingFactor,
 				std::stof(tokens[2]) * scalingFactor,
@@ -220,38 +232,63 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 	return modelTriangles;
 }
 
+// Parse the colours
 std::vector<Colour> colourParseOBJ(const std::string &filename)
 {
+	// Vector of colours
 	std::vector<Colour> colours;
 
+	// Open filestream
 	std::ifstream file(filename);
 	// Check working
 	if (!file.is_open())
 		return colours;
 
+	// Current line
 	std::string line;
+
+	// Current colourName
 	std::string colourName;
+
 	// While getting lines
 	while (std::getline(file, line))
 	{
-
+		// If the line its not empty but the end is a return
 		if (!line.empty() && line.back() == '\r')
+		{
 			line.pop_back();
+		}
+
+		// If its empty
 		if (line.empty())
+		{
 			continue;
+		}
 
+		// Split the line into "tokens"
 		std::vector<std::string> tokens = split(line, ' ');
-		if (tokens.empty() || tokens[0].empty())
-			continue;
 
+		if (tokens.empty() || tokens[0].empty())
+		{
+			continue;
+		}
+
+		// First token
 		const std::string &prefix = tokens[0];
 
+		// Check for new material
 		if (prefix == "newmtl" && tokens.size() >= 2)
 		{
+			// Save the current colour name
 			colourName = tokens[1];
 		}
+		// Check for colour values
 		else if (prefix == "Kd" && tokens.size() >= 4)
 		{
+			// Push back with colourName
+			// Static_cast and std::round combined with multiplying by 255
+			// This makes it in 8 bit RGB
+			// Stof to turn string to float
 			colours.push_back(Colour(
 				colourName,
 				static_cast<int>(std::round(255 * std::stof(tokens[1]))),
@@ -259,17 +296,21 @@ std::vector<Colour> colourParseOBJ(const std::string &filename)
 				static_cast<int>(std::round(255 * std::stof(tokens[3])))));
 		}
 	}
+	// Return vectors
 	return colours;
 }
 
 int main(int argc, char *argv[])
 {
+	// Get the colour pallete
 	palette = colourParseOBJ(objFilename + ".mtl");
+	// Add it all to a Dictionary from a vector
 	for (int i = 0; i < palette.size(); i++)
 	{
 		paletteMap[palette[i].name] = palette[i];
 	}
 
+	// Parse the triangles
 	triangles = triangleParseOBJ(objFilename + ".obj", 0.35f);
 
 	SDL_Event event;

@@ -1,5 +1,5 @@
 #include "RasterisedRenderer.h"
-
+#include <algorithm>
 void RasterisedRenderer::draw(DrawingWindow &window) {}
 
 void RasterisedRenderer::clearPixels(DrawingWindow &window)
@@ -53,7 +53,7 @@ CanvasTriangle RasterisedRenderer::randomTrianglePointsSorted(DrawingWindow &win
     return CanvasTriangle(rand1, rand2, rand3);
 }
 
-CanvasTriangle RasterisedRenderer::trianglePointsSorted(DrawingWindow &window, CanvasTriangle triangle)
+CanvasTriangle RasterisedRenderer::trianglePointsSorted(DrawingWindow &window, CanvasTriangle &triangle)
 {
     if (triangle.v0().y > triangle.v1().y)
         std::swap(triangle.v0(), triangle.v1());
@@ -83,27 +83,17 @@ float RasterisedRenderer::calculateXIntersection(CanvasPoint bottom, CanvasPoint
 // Interpolate between two CanvasPoints based on a given y-coordinate (y) to find the corresponding x-coordinate and texture coordinates
 CanvasPoint RasterisedRenderer::interpolateCanvasPoint(CanvasPoint from, CanvasPoint to, float y)
 {
-
-    // Calculate the difference in y-coordinates between the two points
     float yDifference = to.y - from.y;
 
-    // Calculate the ratio of the distance from the 'from' point to the given y-coordinate relative to the total y-difference between the two points
     float ratio = (std::abs(yDifference) < 0.0001f) ? 0.0f : (y - from.y) / yDifference;
 
-    // Create a new CanvasPoint to store the interpolated values
+    ratio = std::max(0.0f, std::min(1.0f, ratio));
+
     CanvasPoint point;
-
-    // X value is from the "from" point plus the ratio of the difference in x-coordinates between the two points
     point.x = from.x + ratio * (to.x - from.x);
-
-    // Y value is the given y-coordinate
     point.y = y;
-
-    // Interpolate the texture coordinates
     point.texturePoint.x = from.texturePoint.x + ratio * (to.texturePoint.x - from.texturePoint.x);
-
     point.texturePoint.y = from.texturePoint.y + ratio * (to.texturePoint.y - from.texturePoint.y);
-
     point.depth = from.depth + ratio * (to.depth - from.depth);
     return point;
 }
@@ -124,16 +114,17 @@ void RasterisedRenderer::fillScanline(CanvasPoint left, CanvasPoint right, int y
     int xStart = static_cast<int>(std::round(left.x));
     int xEnd = static_cast<int>(std::round(right.x));
 
-    for (int x = xStart; x <= xEnd; x++)
+    for (int x = xStart; x < xEnd; x++)
     {
         if (x < 0 || x >= WIDTH)
             continue;
 
-        float t = (xEnd == xStart) ? 0.0f : static_cast<float>(x - xStart) / (xEnd - xStart);
+        float totalWidth = right.x - left.x;
+        float t = (std::abs(totalWidth) < 0.0001f) ? 0.0f : (static_cast<float>(x) - left.x) / totalWidth;
         float depth = left.depth + t * (right.depth - left.depth);
 
         int i = y * WIDTH + x;
-        if (depth > depthBuffer[i]) // closer than what's already there
+        if (depth > depthBuffer[i])
         {
             depthBuffer[i] = depth;
             window.setPixelColour(x, y, packed);

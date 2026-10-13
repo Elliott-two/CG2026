@@ -22,7 +22,6 @@ void PointCloudRenderer::draw(DrawingWindow &window)
     }
 }
 
-// projectVertexOnToCanvasPoint stays exactly as you have it
 CanvasPoint PointCloudRenderer::projectVertexOnToCanvasPoint(glm::vec3 cameraPosition, float focalLength, glm::vec3 vertexPosition)
 {
     glm::vec3 rel = vertexPosition - cameraPosition;
