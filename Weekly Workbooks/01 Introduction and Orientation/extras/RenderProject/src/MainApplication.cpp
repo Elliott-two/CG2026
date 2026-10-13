@@ -68,6 +68,42 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 			rasterisedRenderer.texturedTriangle(window, textureMap);
 		}
 
+		else if (event.key.keysym.sym == SDLK_LEFT)
+		{
+			std::cout << "Moving Camera left" << std::endl;
+			cameraPosition[0] -= 0.2;
+		}
+
+		else if (event.key.keysym.sym == SDLK_RIGHT)
+		{
+			std::cout << "Moving Camera Right" << std::endl;
+			cameraPosition[0] += 0.2;
+		}
+
+		else if (event.key.keysym.sym == SDLK_UP)
+		{
+			std::cout << "Moving Camera Up" << std::endl;
+			cameraPosition[1] += 0.2;
+		}
+
+		else if (event.key.keysym.sym == SDLK_DOWN)
+		{
+			std::cout << "Moving Camera Down" << std::endl;
+			cameraPosition[1] -= 0.2;
+		}
+
+		else if (event.key.keysym.sym == SDLK_LEFTBRACKET)
+		{
+			std::cout << "Moving Camera in" << std::endl;
+			cameraPosition[2] -= 0.2;
+		}
+
+		else if (event.key.keysym.sym == SDLK_RIGHTBRACKET)
+		{
+			std::cout << "Moving Camera Out" << std::endl;
+			cameraPosition[2] += 0.2;
+		}
+
 		// Switch between renderers based on key presses
 		else if (event.key.keysym.sym == SDLK_p)
 		{
