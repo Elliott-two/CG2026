@@ -38,4 +38,6 @@ public:
     void textureFlatBottomTriangle(CanvasTriangle triangle, TextureMap &textureMap, DrawingWindow &window);
     void textureFlatTopTriangle(CanvasTriangle triangle, TextureMap &textureMap, DrawingWindow &window);
     void texturedTriangle(DrawingWindow &window, TextureMap &textureMap);
+    void textureScanline(CanvasPoint left, CanvasPoint right, int y, TextureMap &textureMap, DrawingWindow &window);
+    void texturedModelTriangle(DrawingWindow &window, CanvasTriangle triangle, TextureMap &textureMap);
 };

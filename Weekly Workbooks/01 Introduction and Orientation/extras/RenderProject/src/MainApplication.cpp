@@ -18,7 +18,7 @@ extern const int WIDTH = 1000;
 extern const int HEIGHT = 1000;
 
 TextureMap textureMap(
-	"../../../03 Triangles and Textures/texture.ppm");
+	"../../../05 Navigation and Transformation/models/texture (1).ppm");
 
 DrawingWindow window = DrawingWindow(WIDTH, HEIGHT);
 
@@ -40,14 +40,46 @@ bool savingFrames = false;
 int frameCounter = 0;
 
 // Core 3D rendering data structures (for when we eventually get around to working in 3D ;o)
-std::string objFilename = "../../../04 Wireframes and Rasterising/models/cornell-box";
+const double PI = 3.14159265358979323846;
+std::string objFilename = "../../../05 Navigation and Transformation/models/textured-cornell-box";
 std::vector<ModelTriangle> triangles;
 std::vector<Colour> palette;
 std::unordered_map<std::string, Colour> paletteMap;
 float focalLength = 2.0;
 glm::vec3 cameraPosition(0.0, 0.0, 4.0);
-glm::mat3 cameraOrientation;
+glm::mat3 cameraOrientation = glm::mat3(1.0f);
 glm::vec3 lightPosition(0.0, 0.8, 0.0);
+
+void rotateX(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, int degrees)
+{
+	double degreeInRadians = degrees * (PI / 180.0);
+	double cos_value = std::cos(degreeInRadians);
+	double sin_value = std::sin(degreeInRadians);
+
+	glm::mat3 rotationMatrix = glm::mat3(
+		glm::vec3(1.0, 0.0, 0.0),
+		glm::vec3(0.0, cos_value, sin_value),
+		glm::vec3(0.0, -sin_value, cos_value));
+
+	cameraOrientation = rotationMatrix * cameraOrientation;
+	cameraPosition = rotationMatrix * cameraPosition;
+}
+
+void rotateY(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, int degrees)
+{
+	double degreeInRadians = degrees * (PI / 180.0);
+	double cos_value = std::cos(degreeInRadians);
+	double sin_value = std::sin(degreeInRadians);
+
+	glm::mat3 rotationMatrix = glm::mat3(
+		glm::vec3(cos_value, 0.0, -sin_value),
+		glm::vec3(0.0, 1.0, 0.0),
+		glm::vec3(sin_value, 0.0, cos_value));
+
+	cameraOrientation = rotationMatrix * cameraOrientation;
+	cameraPosition = rotationMatrix * cameraPosition;
+}
+
 void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = currentRenderer)
 {
 	if (event.type == SDL_KEYDOWN)
@@ -102,6 +134,40 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 		{
 			std::cout << "Moving Camera Out" << std::endl;
 			cameraPosition[2] += 0.2;
+		}
+
+		else if (event.key.keysym.sym == SDLK_l)
+		{
+			std::cout << "Rotating camera by 10 degrees in the x plane" << std::endl;
+			rotateX(cameraPosition, cameraOrientation, 10);
+		}
+
+		else if (event.key.keysym.sym == SDLK_SEMICOLON)
+		{
+			std::cout << "Rotating camera by negative 10 degrees in the x plane" << std::endl;
+			rotateX(cameraPosition, cameraOrientation, -10);
+		}
+
+		else if (event.key.keysym.sym == SDLK_BACKSLASH)
+		{
+			std::cout << "Rotating camera by 10 degrees in the y plane" << std::endl;
+			rotateY(cameraPosition, cameraOrientation, 10);
+		}
+		else if (event.key.keysym.sym == SDLK_QUOTE)
+		{
+			std::cout << "Rotating camera by negative 10 degrees in the y plane" << std::endl;
+			rotateY(cameraPosition, cameraOrientation, -10);
+		}
+
+		else if (event.key.keysym.sym == SDLK_9)
+		{
+			std::cout << "Change Rotating X" << std::endl;
+			OrbitXBool = !OrbitXBool;
+		}
+		else if (event.key.keysym.sym == SDLK_0)
+		{
+			std::cout << "Change Rotating Y" << std::endl;
+			OrbitYBool = !OrbitYBool;
 		}
 
 		// Switch between renderers based on key presses
@@ -198,6 +264,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 }
 std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float scalingFactor)
 {
+
 	// Vector of Triangles
 	std::vector<ModelTriangle> modelTriangles;
 	// Vector of Vertices
@@ -214,6 +281,9 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 
 	// Default Colour if doesn't work
 	Colour colour(255, 255, 255);
+
+	// Empty if no Textures
+	std::array<TexturePoint, 3> texturePoints{};
 
 	// While getting lines
 	while (std::getline(file, line))
@@ -251,12 +321,24 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 			for (int i = 0; i < 3; i++)
 				idx[i] = std::stoi(split(tokens[i + 1], '/')[0]) - 1;
 
-			modelTriangles.push_back(ModelTriangle(
-				vertices[idx[0]], vertices[idx[1]], vertices[idx[2]],
-				colour));
+			ModelTriangle triangle(vertices[idx[0]], vertices[idx[1]], vertices[idx[2]], colour);
+			triangle.texturePoints = texturePoints;
+			modelTriangles.push_back(triangle);
 		}
 		else if (prefix == "usemtl" && tokens.size() >= 2)
 		{
+			if (tokens[1] == "Cobbles")
+			{
+				texturePoints = {
+					TexturePoint(100, 5),
+					TexturePoint(65, 300),
+					TexturePoint(360, 360)};
+			}
+			else
+			{
+				texturePoints = {};
+			}
+
 			auto it = paletteMap.find(tokens[1]);
 			if (it != paletteMap.end())
 			{

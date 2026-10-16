@@ -394,3 +394,57 @@ void RasterisedRenderer::textureFlatTopTriangle(CanvasTriangle triangle, Texture
         }
     }
 }
+
+void RasterisedRenderer::textureScanline(CanvasPoint left, CanvasPoint right, int y, TextureMap &textureMap, DrawingWindow &window)
+{
+    if (y < 0 || y >= HEIGHT)
+        return;
+    if (left.x > right.x)
+        std::swap(left, right);
+
+    int xStart = static_cast<int>(std::round(left.x));
+    int xEnd = static_cast<int>(std::round(right.x));
+    float width = right.x - left.x;
+
+    for (int x = xStart; x <= xEnd; x++)
+    {
+        if (x < 0 || x >= WIDTH)
+            continue;
+
+        float t = (std::abs(width) < 0.0001f) ? 0.0f : (x - left.x) / width;
+        float depth = left.depth + t * (right.depth - left.depth);
+
+        int i = y * WIDTH + x;
+        if (depth <= depthBuffer[i])
+            continue;
+        depthBuffer[i] = depth;
+
+        float texX = (left.texturePoint.x + t * (right.texturePoint.x - left.texturePoint.x)) / depth;
+        float texY = (left.texturePoint.y + t * (right.texturePoint.y - left.texturePoint.y)) / depth;
+
+        int tx = std::max(0, std::min(static_cast<int>(texX), static_cast<int>(textureMap.width) - 1));
+        int ty = std::max(0, std::min(static_cast<int>(texY), static_cast<int>(textureMap.height) - 1));
+
+        window.setPixelColour(x, y, textureMap.pixels[ty * textureMap.width + tx]);
+    }
+}
+
+void RasterisedRenderer::texturedModelTriangle(DrawingWindow &window, CanvasTriangle triangle, TextureMap &textureMap)
+{
+    CanvasTriangle sorted = trianglePointsSorted(window, triangle);
+    CanvasPoint top = sorted.v0();
+    CanvasPoint middle = sorted.v1();
+    CanvasPoint bottom = sorted.v2();
+
+    int yStart = std::max(0, static_cast<int>(std::round(top.y)));
+    int yEnd = std::min(HEIGHT - 1, static_cast<int>(std::round(bottom.y)));
+
+    for (int y = yStart; y <= yEnd; y++)
+    {
+        CanvasPoint longEdge = interpolateCanvasPoint(top, bottom, y);
+        CanvasPoint shortEdge = (y < middle.y)
+                                    ? interpolateCanvasPoint(top, middle, y)
+                                    : interpolateCanvasPoint(middle, bottom, y);
+        textureScanline(longEdge, shortEdge, y, textureMap, window);
+    }
+}
