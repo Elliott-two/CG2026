@@ -5,7 +5,7 @@
 // Stopping and starting orbiting
 bool OrbitXBool = false;
 bool OrbitYBool = false;
-
+bool WireframeBool = false;
 // Useful for cleaner code
 namespace
 {
@@ -81,6 +81,13 @@ void PointCloudRenderer::orbitX(float degrees)
 // Main Drawing
 void PointCloudRenderer::draw(DrawingWindow &window)
 {
+
+    if (WireframeBool)
+    {
+        drawStroked(window);
+        return;
+    }
+
     // Clear and reset
     window.clearPixels();
     resetDepthBuffer();
@@ -128,6 +135,38 @@ void PointCloudRenderer::draw(DrawingWindow &window)
                 window,
                 CanvasTriangle(vertex[0], vertex[1], vertex[2]), triangle.colour);
         }
+    }
+}
+
+// Main Drawing
+void PointCloudRenderer::drawStroked(DrawingWindow &window)
+{
+    // Clear and reset
+    window.clearPixels();
+    resetDepthBuffer();
+
+    // Check orbiting and not exclusive
+    if (OrbitXBool)
+    {
+        orbitX(ORBIT_X_DEGREES_PER_FRAME);
+    }
+    if (OrbitYBool)
+    {
+        orbitY(ORBIT_Y_DEGREES_PER_FRAME);
+    }
+
+    // For all the triangles
+    for (const ModelTriangle &triangle : triangles)
+    {
+        // Convert vertexs
+        CanvasPoint vertex[3];
+        for (int i = 0; i < 3; i++)
+        {
+            vertex[i] = projectVertexOnToCanvasPoint(cameraPosition, focalLength, triangle.vertices[i]);
+        }
+
+        strokedTriangle(
+            CanvasTriangle(vertex[0], vertex[1], vertex[2]), triangle.colour, window);
     }
 }
 

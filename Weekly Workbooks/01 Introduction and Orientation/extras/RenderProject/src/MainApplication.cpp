@@ -7,6 +7,7 @@
 #include "TriangleSpectrumRenderer.h"
 #include "RasterisedRenderer.h"
 #include "PointCloudRenderer.h"
+#include "RayTracedRenderer.h"
 #include <vector>
 #include <unistd.h>
 #include <iostream>
@@ -16,6 +17,7 @@
 // Define globals for WIDTH and HEIGHT of the window (can be accessed from any renderer)
 extern const int WIDTH = 1000;
 extern const int HEIGHT = 1000;
+extern bool WireframeBool;
 
 TextureMap textureMap(
 	"../../../05 Navigation and Transformation/models/texture (1).ppm");
@@ -30,9 +32,9 @@ WhiteNoiseRenderer whiteNoise = WhiteNoiseRenderer();
 ColourSpectrumRenderer colourSpectrum = ColourSpectrumRenderer();
 TriangleSpectrumRenderer triangleSpectrum = TriangleSpectrumRenderer();
 RasterisedRenderer rasterisedRenderer = RasterisedRenderer();
-PointCloudRenderer pointCloud = PointCloudRenderer();
-
-Renderer *currentRenderer = &rasterisedRenderer; // Start with rasterised renderer as default
+PointCloudRenderer pointCloudRenderer = PointCloudRenderer();
+RayTracedRenderer rayTracedRenderer = RayTracedRenderer();
+Renderer *currentRenderer = &pointCloudRenderer; // Start with rasterised renderer as default
 
 // Unnecessary for now
 bool savingFrames = false;
@@ -48,7 +50,7 @@ std::unordered_map<std::string, Colour> paletteMap;
 float focalLength = 2.0;
 glm::vec3 cameraPosition(0.0, 0.0, 4.0);
 glm::mat3 cameraOrientation = glm::mat3(1.0f);
-glm::vec3 lightPosition(0.0, 0.8, 0.0);
+glm::vec3 lightPosition(0.0f, 0.8f, 0.0f);
 
 void rotateX(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, int degrees)
 {
@@ -170,6 +172,12 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 			OrbitYBool = !OrbitYBool;
 		}
 
+		else if (event.key.keysym.sym == SDLK_v)
+		{
+			std::cout << "Toggling Wireframe" << std::endl;
+			WireframeBool = !WireframeBool;
+		}
+
 		// Switch between renderers based on key presses
 		else if (event.key.keysym.sym == SDLK_p)
 		{
@@ -177,6 +185,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 			currentRenderer = &rasterisedRenderer;
 			rasterisedRenderer.clearPixels(window); // Clear the window when switching to rasterised renderer
 		}
+
 		else if (event.key.keysym.sym == SDLK_c)
 		{
 			std::cout << "Turning Colour Spectrum" << std::endl;
@@ -215,7 +224,12 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 		else if (event.key.keysym.sym == SDLK_k)
 		{
 			std::cout << "Turning Point Cloud" << std::endl;
-			currentRenderer = &pointCloud;
+			currentRenderer = &pointCloudRenderer;
+		}
+		else if (event.key.keysym.sym == SDLK_RETURN)
+		{
+			std::cout << "Turning RayTracing" << std::endl;
+			currentRenderer = &rayTracedRenderer;
 		}
 
 		// Adjust the RGB values based on key presses

@@ -10,11 +10,13 @@ extern float focalLength;
 extern bool OrbitXBool;
 extern bool OrbitYBool;
 extern TextureMap textureMap;
+extern bool WireframeBool;
 
 class PointCloudRenderer : public RasterisedRenderer
 {
 public:
     void draw(DrawingWindow &window) override;
+    void drawStroked(DrawingWindow &window);
     CanvasPoint projectVertexOnToCanvasPoint(glm::vec3 cameraPosition, float focalLength, glm::vec3 vertexPosition);
     void orbitY(float degrees);
     void orbitX(float degrees);

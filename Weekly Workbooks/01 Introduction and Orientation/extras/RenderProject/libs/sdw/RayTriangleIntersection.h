@@ -4,7 +4,8 @@
 #include <iostream>
 #include "ModelTriangle.h"
 
-struct RayTriangleIntersection {
+struct RayTriangleIntersection
+{
 	glm::vec3 intersectionPoint;
 	float distanceFromCamera;
 	ModelTriangle intersectedTriangle;
