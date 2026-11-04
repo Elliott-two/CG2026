@@ -6,60 +6,43 @@
 bool OrbitXBool = false;
 bool OrbitYBool = false;
 bool WireframeBool = false;
-// Useful for cleaner code
-namespace
+
+// Image Scale
+constexpr float IMAGE_SCALE = 500.0f;
+
+// Speed of orbit
+constexpr float ORBIT_Y_DEGREES_PER_FRAME = 0.5f;
+constexpr float ORBIT_X_DEGREES_PER_FRAME = 0.5f;
+
+// PI
+constexpr float PI = 3.14159265358979323846f;
+
+// Rotate Y for orbit
+glm::mat3 PointCloudRenderer::rotationY(float degrees)
 {
-    // Image Scale
-    constexpr float IMAGE_SCALE = 500.0f;
+    double degreeInRadians = degrees * (PI / 180.0);
+    double cos_value = std::cos(degreeInRadians);
+    double sin_value = std::sin(degreeInRadians);
 
-    // Speed of orbit
-    constexpr float ORBIT_Y_DEGREES_PER_FRAME = 0.5f;
-    constexpr float ORBIT_X_DEGREES_PER_FRAME = 0.5f;
+    glm::mat3 rotationMatrix = glm::mat3(
+        glm::vec3(cos_value, 0.0, -sin_value),
+        glm::vec3(0.0, 1.0, 0.0),
+        glm::vec3(sin_value, 0.0, cos_value));
+    return rotationMatrix;
+}
 
-    // PI
-    constexpr float PI = 3.14159265358979323846f;
+// Rotate X for orbit
+glm::mat3 PointCloudRenderer::rotationX(float degrees)
+{
+    double degreeInRadians = degrees * (PI / 180.0);
+    double cos_value = std::cos(degreeInRadians);
+    double sin_value = std::sin(degreeInRadians);
 
-    // Rotate Y for orbit
-    glm::mat3 rotationY(float degrees)
-    {
-        double degreeInRadians = degrees * (PI / 180.0);
-        double cos_value = std::cos(degreeInRadians);
-        double sin_value = std::sin(degreeInRadians);
-
-        glm::mat3 rotationMatrix = glm::mat3(
-            glm::vec3(cos_value, 0.0, -sin_value),
-            glm::vec3(0.0, 1.0, 0.0),
-            glm::vec3(sin_value, 0.0, cos_value));
-        return rotationMatrix;
-    }
-
-    // Rotate X for orbit
-    glm::mat3 rotationX(float degrees)
-    {
-        double degreeInRadians = degrees * (PI / 180.0);
-        double cos_value = std::cos(degreeInRadians);
-        double sin_value = std::sin(degreeInRadians);
-
-        glm::mat3 rotationMatrix = glm::mat3(
-            glm::vec3(1.0, 0.0, 0.0),
-            glm::vec3(0.0, cos_value, sin_value),
-            glm::vec3(0.0, -sin_value, cos_value));
-        return rotationMatrix;
-    }
-
-    // Check for textured
-    bool isTextured(const ModelTriangle &triangle)
-    {
-        for (const TexturePoint &texturePoint : triangle.texturePoints)
-        {
-
-            if (texturePoint.x != 0.0f || texturePoint.y != 0.0f)
-            {
-                return true;
-            }
-        }
-        return false;
-    }
+    glm::mat3 rotationMatrix = glm::mat3(
+        glm::vec3(1.0, 0.0, 0.0),
+        glm::vec3(0.0, cos_value, sin_value),
+        glm::vec3(0.0, -sin_value, cos_value));
+    return rotationMatrix;
 }
 
 // Orbit code
@@ -76,6 +59,20 @@ void PointCloudRenderer::orbitX(float degrees)
     const glm::mat3 rotationMatrix = rotationX(degrees);
     cameraPosition = rotationMatrix * cameraPosition;
     cameraOrientation = rotationMatrix * cameraOrientation;
+}
+
+// Check for textured
+bool PointCloudRenderer::isTextured(const ModelTriangle &triangle)
+{
+    for (const TexturePoint &texturePoint : triangle.texturePoints)
+    {
+
+        if (texturePoint.x != 0.0f || texturePoint.y != 0.0f)
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 // Main Drawing

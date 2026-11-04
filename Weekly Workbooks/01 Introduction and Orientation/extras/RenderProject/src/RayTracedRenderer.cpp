@@ -9,7 +9,6 @@ extern float focalLength;
 extern glm::vec3 lightPosition;
 
 constexpr float IMAGE_SCALE = 500.0f;
-
 RayTracedRenderer::RayTracedRenderer() {}
 
 void RayTracedRenderer::draw(DrawingWindow &window)
@@ -28,14 +27,15 @@ void RayTracedRenderer::draw(DrawingWindow &window)
         return;
     }
 
-    for (int x = 0; x < window.width; ++x)
+    for (int x = 0; x < WIDTH; ++x)
     {
-        for (int y = 0; y < window.height; ++y)
+        for (int y = 0; y < HEIGHT; ++y)
         {
             // Calculate the direction of the ray from the camera through the pixel
-            float u = (x - window.width / 2.0f) / (IMAGE_SCALE * focalLength);
-            float v = (window.height / 2.0f - y) / (IMAGE_SCALE * focalLength);
+            float u = (x - WIDTH / 2.0f) / (IMAGE_SCALE * focalLength);
+            float v = (HEIGHT / 2.0f - y) / (IMAGE_SCALE * focalLength);
 
+            // Normailise for consistency
             glm::vec3 rayDirection = glm::normalize(cameraOrientation * glm::vec3(u, v, -1.0f));
 
             // Get the closest intersection of the ray with the triangles
@@ -45,11 +45,11 @@ void RayTracedRenderer::draw(DrawingWindow &window)
             {
                 // Calculate lighting at the intersection point
                 Colour pixelColour = calculateLighting(intersection.intersectionPoint, intersection.intersectedTriangle.normal, intersection.intersectedTriangle.colour);
-                window.setPixelColour(x, y, (255u << 24) | (pixelColour.red << 16) | (pixelColour.green << 8) | pixelColour.blue);
+                window.setPixelColour(x, y, (pixelColour.red << 16) | (pixelColour.green << 8) | pixelColour.blue);
             }
             else
             {
-                // No intersection, set background colour (e.g., black)
+                // No intersection, set background colour to black
                 window.setPixelColour(x, y, 0xFF000000); // Black with full opacity
             }
         }
@@ -65,9 +65,11 @@ RayTriangleIntersection RayTracedRenderer::getClosestValidIntersection(glm::vec3
     // Initialise the closest intersection with a large distance
     RayTriangleIntersection closestIntersection;
     closestIntersection.distanceFromCamera = std::numeric_limits<float>::max();
-    closestIntersection.intersectionPoint = glm::vec3(0.0f);
+
+    // Flag to check if any valid intersection was found
     bool foundIntersection = false;
 
+    // Loop through all triangles by reference
     for (const ModelTriangle &triangle : triangles)
     {
         // Given formula
@@ -83,7 +85,7 @@ RayTriangleIntersection RayTracedRenderer::getClosestValidIntersection(glm::vec3
         float u = possibleSolution.y;
         float v = possibleSolution.z;
 
-        // Sanity check for valid intersection: t > 0, u >= 0, v >= 0, and u + v <= 1
+        // Check for valid intersection: t > 0, u >= 0, v >= 0, and u + v <= 1
         if (t > 0 && u >= 0.0f && v >= 0.0f && (u + v) <= 1.0f)
         {
             // Update the closest intersection if this one is closer
@@ -93,6 +95,9 @@ RayTriangleIntersection RayTracedRenderer::getClosestValidIntersection(glm::vec3
                 closestIntersection.distanceFromCamera = t;
                 closestIntersection.intersectionPoint = startPoint + rayDirection * t;
                 closestIntersection.intersectedTriangle = triangle;
+
+                // Calculate the normal of the intersected triangle using the cross product of its edges
+                // Given by VSCode Intellisense
                 closestIntersection.intersectedTriangle.normal = glm::normalize(glm::cross(e0, e1));
             }
         }
@@ -109,30 +114,36 @@ RayTriangleIntersection RayTracedRenderer::getClosestValidIntersection(glm::vec3
 Colour RayTracedRenderer::calculateLighting(glm::vec3 intersectionPoint, glm::vec3 normal, Colour baseColour)
 {
 
+    // Call isInShadow to determine if the intersection point is in shadow
     if (isInShadow(intersectionPoint, normal))
     {
-        // Define a custom shadow color or scaling factor
-        const float shadowFactor = 0.3f; // Adjust darkness as desired
+        // Define a scaling factor
+        const float shadowFactor = 0.3f;
         return Colour(int(baseColour.red * shadowFactor),
                       int(baseColour.green * shadowFactor),
                       int(baseColour.blue * shadowFactor));
     }
 
-    // Non-shadowed pixels display their standard unlit base color
+    // Non-shadowed pixels display their standard base color
     return baseColour;
 }
 
 bool RayTracedRenderer::isInShadow(glm::vec3 point, glm::vec3 normal)
 {
-    // Nudge the origin off the surface so the ray doesn't hit its own triangle (shadow acne)
+    // Stop Shadow Acne through offsetting
+    // Checking index didnt work for me
     glm::vec3 origin = point + glm::normalize(normal) * 0.002f;
 
+    // Calculate the direction from the intersection point to the light source
     glm::vec3 toLight = lightPosition - origin;
+
+    // Calculate the distance to the light source and normalize the direction
     float distanceToLight = glm::length(toLight);
     glm::vec3 shadowDir = toLight / distanceToLight;
 
+    // Check for intersections along the ray from the intersection point to the light source
     RayTriangleIntersection hit = getClosestValidIntersection(origin, shadowDir);
 
-    // Shadowed only if something is hit *between* the surface and the light
+    // Shadowed only if something is hit between the surface and the light
     return hit.distanceFromCamera > 0.0f && hit.distanceFromCamera < distanceToLight;
 }

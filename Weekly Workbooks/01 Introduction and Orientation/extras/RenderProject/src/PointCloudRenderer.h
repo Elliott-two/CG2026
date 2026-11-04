@@ -15,9 +15,12 @@ extern bool WireframeBool;
 class PointCloudRenderer : public RasterisedRenderer
 {
 public:
+    glm::mat3 rotationY(float degrees);
+    glm::mat3 rotationX(float degrees);
+    void orbitY(float degrees);
+    void orbitX(float degrees);
+    bool isTextured(const ModelTriangle &triangle);
     void draw(DrawingWindow &window) override;
     void drawStroked(DrawingWindow &window);
     CanvasPoint projectVertexOnToCanvasPoint(glm::vec3 cameraPosition, float focalLength, glm::vec3 vertexPosition);
-    void orbitY(float degrees);
-    void orbitX(float degrees);
 };
