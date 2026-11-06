@@ -44,20 +44,26 @@ int frameCounter = 0;
 // Core 3D rendering data structures (for when we eventually get around to working in 3D ;o)
 const double PI = 3.14159265358979323846;
 std::string objFilename = "../../../05 Navigation and Transformation/models/textured-cornell-box";
+
+std::string objFilenameSphere = "../../../07 Lighting and Shading/resources/sphere";
+
 std::vector<ModelTriangle> triangles;
 std::vector<Colour> palette;
 std::unordered_map<std::string, Colour> paletteMap;
+
 float focalLength = 2.0;
 glm::vec3 cameraPosition(0.0, 0.0, 4.0);
 glm::mat3 cameraOrientation = glm::mat3(1.0f);
-glm::vec3 lightPosition(0.0f, 0.8f, 0.0f);
+glm::vec3 lightPosition(-1.0f, 1.5f, 1.0f);
 
+// Rotation functions
 void rotateX(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, int degrees)
 {
 	double degreeInRadians = degrees * (PI / 180.0);
 	double cos_value = std::cos(degreeInRadians);
 	double sin_value = std::sin(degreeInRadians);
 
+	// Given formula
 	glm::mat3 rotationMatrix = glm::mat3(
 		glm::vec3(1.0, 0.0, 0.0),
 		glm::vec3(0.0, cos_value, sin_value),
@@ -67,6 +73,7 @@ void rotateX(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, int degree
 	cameraPosition = rotationMatrix * cameraPosition;
 }
 
+// Same as above but for Y
 void rotateY(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, int degrees)
 {
 	double degreeInRadians = degrees * (PI / 180.0);
@@ -82,6 +89,7 @@ void rotateY(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, int degree
 	cameraPosition = rotationMatrix * cameraPosition;
 }
 
+// Handle all events
 void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = currentRenderer)
 {
 	if (event.type == SDL_KEYDOWN)
@@ -337,6 +345,12 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 
 			ModelTriangle triangle(vertices[idx[0]], vertices[idx[1]], vertices[idx[2]], colour);
 			triangle.texturePoints = texturePoints;
+			glm::vec3 edge1 = triangle.vertices[1] - triangle.vertices[0];
+			glm::vec3 edge2 = triangle.vertices[2] - triangle.vertices[0];
+
+			// Winding order is clockwise? Can't really wrap my head around it, but this works and the opposite leaves it in shadow
+			glm::vec3 normal = glm::normalize(glm::cross(edge1, edge2));
+			triangle.normal = normal;
 			modelTriangles.push_back(triangle);
 		}
 		else if (prefix == "usemtl" && tokens.size() >= 2)
@@ -443,7 +457,7 @@ int main(int argc, char *argv[])
 	}
 
 	// Parse the triangles
-	triangles = triangleParseOBJ(objFilename + ".obj", 0.35f);
+	triangles = triangleParseOBJ(objFilenameSphere + ".obj", 0.35f);
 
 	SDL_Event event;
 	while (true)
