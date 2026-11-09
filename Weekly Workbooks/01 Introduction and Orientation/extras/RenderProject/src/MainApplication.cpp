@@ -17,45 +17,60 @@
 // Define globals for WIDTH and HEIGHT of the window (can be accessed from any renderer)
 extern const int WIDTH = 1000;
 extern const int HEIGHT = 1000;
+
+// Bool to check whether we want stroked triangle view
 extern bool WireframeBool;
 
+// Texture map for cobbles
 TextureMap textureMap(
 	"../../../05 Navigation and Transformation/models/texture (1).ppm");
 
 DrawingWindow window = DrawingWindow(WIDTH, HEIGHT);
 
 // Create instances of each renderer
+
+// Noise colours (Not told to do this but had some fun)
 RedNoiseRenderer redNoise = RedNoiseRenderer();
 GreenNoiseRenderer greenNoise = GreenNoiseRenderer();
 BlueNoiseRenderer blueNoise = BlueNoiseRenderer();
 WhiteNoiseRenderer whiteNoise = WhiteNoiseRenderer();
+
+// Colour spectrums
 ColourSpectrumRenderer colourSpectrum = ColourSpectrumRenderer();
 TriangleSpectrumRenderer triangleSpectrum = TriangleSpectrumRenderer();
+
+// Cornell Box and Sphere Renderers
 RasterisedRenderer rasterisedRenderer = RasterisedRenderer();
 PointCloudRenderer pointCloudRenderer = PointCloudRenderer();
 RayTracedRenderer rayTracedRenderer = RayTracedRenderer();
-Renderer *currentRenderer = &pointCloudRenderer; // Start with rasterised renderer as default
+
+// The default starting point
+Renderer *currentRenderer = &pointCloudRenderer;
 
 // Unnecessary for now
 bool savingFrames = false;
-
 int frameCounter = 0;
 
-// Core 3D rendering data structures (for when we eventually get around to working in 3D ;o)
-const double PI = 3.14159265358979323846;
+// Filenames
 std::string objFilename = "../../../05 Navigation and Transformation/models/textured-cornell-box";
-
 std::string objFilenameSphere = "../../../07 Lighting and Shading/resources/sphere";
 
-std::vector<ModelTriangle> triangles;
-std::vector<Colour> palette;
-std::unordered_map<std::string, Colour> paletteMap;
-std::vector<std::array<glm::vec3, 3>> vertexNormalsByTriangle;
-
+// Core 3D rendering data structures (for when we eventually get around to working in 3D ;o)
 float focalLength = 2.0;
 glm::vec3 cameraPosition(0.0, 0.0, 4.0);
 glm::mat3 cameraOrientation = glm::mat3(1.0f);
 glm::vec3 lightPosition(-1.0f, 1.5f, 1.0f);
+
+// PI so i dont have to call a library
+const double PI = 3.14159265358979323846;
+
+// Triangle storage
+std::vector<ModelTriangle> triangles;
+std::vector<std::array<glm::vec3, 3>> vertexNormalsByTriangle;
+
+// Colour storage
+std::vector<Colour> palette;
+std::unordered_map<std::string, Colour> paletteMap;
 
 // Rotation functions
 void rotateX(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, int degrees)
@@ -70,6 +85,7 @@ void rotateX(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, int degree
 		glm::vec3(0.0, cos_value, sin_value),
 		glm::vec3(0.0, -sin_value, cos_value));
 
+	// Correct order
 	cameraOrientation = rotationMatrix * cameraOrientation;
 	cameraPosition = rotationMatrix * cameraPosition;
 }
@@ -90,201 +106,157 @@ void rotateY(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, int degree
 	cameraPosition = rotationMatrix * cameraPosition;
 }
 
+// I hate hate hate std::cout and std::endl it looks so ugly
+// So i made this cause its so much easier
+void print(std::string s)
+{
+	std::cout << s << std::endl;
+}
+
 // Handle all events
 void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = currentRenderer)
 {
 	if (event.type == SDL_KEYDOWN)
 	{
-		if (event.key.keysym.sym == SDLK_u)
+		// Switched to switch Case from if-else chain as it looks nicer
+		switch (event.key.keysym.sym)
 		{
-			std::cout << "Drawing Stroked Triangles" << std::endl;
+		// Drawing Triangles
+		case SDLK_u:
+			print("Drawing Stroked Triangles");
 			rasterisedRenderer.drawStrokedTriangles(window);
-		}
-		else if (event.key.keysym.sym == SDLK_BACKSPACE)
-		{
-			std::cout << "Clearing Pixels" << std::endl;
-			rasterisedRenderer.clearPixels(window);
-		}
-		else if (event.key.keysym.sym == SDLK_t)
-		{
-			std::cout << "Drawing Textured Triangles" << std::endl;
+			break;
+		case SDLK_t:
+			print("Drawing Textured Triangles");
 			rasterisedRenderer.texturedTriangle(window, textureMap);
-		}
-
-		else if (event.key.keysym.sym == SDLK_LEFT)
-		{
-			std::cout << "Moving Camera left" << std::endl;
-			cameraPosition[0] -= 0.2;
-		}
-
-		else if (event.key.keysym.sym == SDLK_RIGHT)
-		{
-			std::cout << "Moving Camera Right" << std::endl;
-			cameraPosition[0] += 0.2;
-		}
-
-		else if (event.key.keysym.sym == SDLK_UP)
-		{
-			std::cout << "Moving Camera Up" << std::endl;
-			cameraPosition[1] += 0.2;
-		}
-
-		else if (event.key.keysym.sym == SDLK_DOWN)
-		{
-			std::cout << "Moving Camera Down" << std::endl;
-			cameraPosition[1] -= 0.2;
-		}
-
-		else if (event.key.keysym.sym == SDLK_LEFTBRACKET)
-		{
-			std::cout << "Moving Camera in" << std::endl;
-			cameraPosition[2] -= 0.2;
-		}
-
-		else if (event.key.keysym.sym == SDLK_RIGHTBRACKET)
-		{
-			std::cout << "Moving Camera Out" << std::endl;
-			cameraPosition[2] += 0.2;
-		}
-
-		else if (event.key.keysym.sym == SDLK_l)
-		{
-			std::cout << "Rotating camera by 10 degrees in the x plane" << std::endl;
-			rotateX(cameraPosition, cameraOrientation, 10);
-		}
-
-		else if (event.key.keysym.sym == SDLK_SEMICOLON)
-		{
-			std::cout << "Rotating camera by negative 10 degrees in the x plane" << std::endl;
-			rotateX(cameraPosition, cameraOrientation, -10);
-		}
-
-		else if (event.key.keysym.sym == SDLK_BACKSLASH)
-		{
-			std::cout << "Rotating camera by 10 degrees in the y plane" << std::endl;
-			rotateY(cameraPosition, cameraOrientation, 10);
-		}
-		else if (event.key.keysym.sym == SDLK_QUOTE)
-		{
-			std::cout << "Rotating camera by negative 10 degrees in the y plane" << std::endl;
-			rotateY(cameraPosition, cameraOrientation, -10);
-		}
-
-		else if (event.key.keysym.sym == SDLK_9)
-		{
-			std::cout << "Change Rotating X" << std::endl;
-			OrbitXBool = !OrbitXBool;
-		}
-		else if (event.key.keysym.sym == SDLK_0)
-		{
-			std::cout << "Change Rotating Y" << std::endl;
-			OrbitYBool = !OrbitYBool;
-		}
-
-		else if (event.key.keysym.sym == SDLK_v)
-		{
-			std::cout << "Toggling Wireframe" << std::endl;
+			break;
+		case SDLK_v:
+			print("Toggling Wireframe");
 			WireframeBool = !WireframeBool;
-		}
+			break;
+		// Clear Pixels
+		case SDLK_BACKSPACE:
+			print("Clearing Pixels");
+			rasterisedRenderer.clearPixels(window);
+			break;
+		// Camera Movements
+		case SDLK_LEFT:
+			print("Moving Camera left");
+			cameraPosition[0] -= 0.2;
+			break;
+		case SDLK_RIGHT:
+			print("Moving Camera Right");
+			cameraPosition[0] += 0.2;
+			break;
+		case SDLK_UP:
+			print("Moving Camera Up");
+			cameraPosition[1] += 0.2;
+			break;
+		case SDLK_DOWN:
+			print("Moving Camera Down");
+			cameraPosition[1] -= 0.2;
+			break;
+		case SDLK_LEFTBRACKET:
+			print("Moving Camera in");
+			cameraPosition[2] -= 0.2;
+			break;
+		case SDLK_RIGHTBRACKET:
+			print("Moving Camera Out");
+			cameraPosition[2] += 0.2;
+			break;
+		case SDLK_l:
+			print("Rotating camera by 10 degrees in the x plane");
+			rotateX(cameraPosition, cameraOrientation, 10);
+			break;
+		case SDLK_SEMICOLON:
+			print("Rotating camera by negative 10 degrees in the x plane");
+			rotateX(cameraPosition, cameraOrientation, -10);
+			break;
+		case SDLK_BACKSLASH:
+			print("Rotating camera by 10 degrees in the y plane");
+			rotateY(cameraPosition, cameraOrientation, 10);
+			break;
+		case SDLK_QUOTE:
+			print("Rotating camera by negative 10 degrees in the y plane");
+			rotateY(cameraPosition, cameraOrientation, -10);
+			break;
+		case SDLK_9:
+			print("Change Rotating X");
+			OrbitXBool = !OrbitXBool;
+			break;
+		case SDLK_0:
+			print("Change Rotating Y");
+			OrbitYBool = !OrbitYBool;
+			break;
 
 		// Switch between renderers based on key presses
-		else if (event.key.keysym.sym == SDLK_p)
-		{
-			std::cout << "Turning Rasterised Renderer" << std::endl;
+		case SDLK_p:
+			print("Turning Rasterised Renderer");
 			currentRenderer = &rasterisedRenderer;
 			rasterisedRenderer.clearPixels(window); // Clear the window when switching to rasterised renderer
-		}
-
-		else if (event.key.keysym.sym == SDLK_c)
-		{
-			std::cout << "Turning Colour Spectrum" << std::endl;
+			break;
+		case SDLK_c:
+			print("Turning Colour Spectrum");
 			currentRenderer = &colourSpectrum;
-		}
-
-		else if (event.key.keysym.sym == SDLK_m)
-		{
-			std::cout << "Turning Triangle Spectrum" << std::endl;
+			break;
+		case SDLK_m:
+			print("Turning Triangle Spectrum");
 			currentRenderer = &triangleSpectrum;
-		}
-
-		else if (event.key.keysym.sym == SDLK_r)
-		{
-			std::cout << "Turning Red" << std::endl;
+			break;
+		case SDLK_r:
+			print("Turning Red");
 			currentRenderer = &redNoise;
-		}
-
-		else if (event.key.keysym.sym == SDLK_g)
-		{
-			std::cout << "Turning Green" << std::endl;
+			break;
+		case SDLK_g:
+			print("Turning Green");
 			currentRenderer = &greenNoise;
-		}
-
-		else if (event.key.keysym.sym == SDLK_b)
-		{
-			std::cout << "Turning Blue" << std::endl;
+			break;
+		case SDLK_b:
+			print("Turning Blue");
 			currentRenderer = &blueNoise;
-		}
-
-		else if (event.key.keysym.sym == SDLK_w)
-		{
-			std::cout << "Turning White" << std::endl;
+			break;
+		case SDLK_w:
+			print("Turning White");
 			currentRenderer = &whiteNoise;
-		}
-		else if (event.key.keysym.sym == SDLK_k)
-		{
-			std::cout << "Turning Point Cloud" << std::endl;
+			break;
+		case SDLK_k:
+			print("Turning Point Cloud");
 			currentRenderer = &pointCloudRenderer;
-		}
-		else if (event.key.keysym.sym == SDLK_RETURN)
-		{
-			std::cout << "Turning RayTracing" << std::endl;
+			break;
+		case SDLK_RETURN:
+			print("Turning RayTracing");
 			currentRenderer = &rayTracedRenderer;
-		}
+			break;
 
 		// Adjust the RGB values based on key presses
-		else if (event.key.keysym.sym == SDLK_1)
-		{
+		case SDLK_1:
 			currentRenderer->adjustRed(+5);
-			std::cout
-				<< "Increase Red" << std::endl;
-		}
-
-		else if (event.key.keysym.sym == SDLK_2)
-		{
+			print("Increase Red");
+			break;
+		case SDLK_2:
 			currentRenderer->adjustRed(-5);
-			std::cout
-				<< "Decrease Red" << std::endl;
-		}
-
-		else if (event.key.keysym.sym == SDLK_3)
-		{
+			print("Decrease Red");
+			break;
+		case SDLK_3:
 			currentRenderer->adjustBlue(+5);
-			std::cout
-				<< "Increase Blue" << std::endl;
-		}
-
-		else if (event.key.keysym.sym == SDLK_4)
-		{
+			print("Increase Blue");
+			break;
+		case SDLK_4:
 			currentRenderer->adjustBlue(-5);
-			std::cout
-				<< "Decrease Blue" << std::endl;
-		}
-
-		else if (event.key.keysym.sym == SDLK_5)
-		{
+			print("Decrease Blue");
+			break;
+		case SDLK_5:
 			currentRenderer->adjustGreen(+5);
-			std::cout
-				<< "Increase Green" << std::endl;
-		}
-
-		else if (event.key.keysym.sym == SDLK_6)
-		{
+			print("Increase Green");
+			break;
+		case SDLK_6:
 			currentRenderer->adjustGreen(-5);
-			std::cout
-				<< "Decrease Green" << std::endl;
+			print("Decrease Green");
+			break;
 		}
 	}
 }
+
 std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float scalingFactor)
 {
 
@@ -491,8 +463,12 @@ int main(int argc, char *argv[])
 	// Parse the triangles
 	triangles = triangleParseOBJ(objFilenameSphere + ".obj", 0.35f);
 
+	// Clear the vector? Given by intellisense so im going to trust it
 	vertexNormalsByTriangle.clear();
+	// Reserve the space, also given by intellisense
 	vertexNormalsByTriangle.reserve(triangles.size());
+
+	// Loop through triangles and find the vertex normals
 	for (const ModelTriangle &triangle : triangles)
 	{
 		vertexNormalsByTriangle.push_back(vertexNormals(triangle));
@@ -515,7 +491,7 @@ int main(int argc, char *argv[])
 				paddedCounter = "0" + paddedCounter;
 			// Use whichever image file format works best on your platform (comment out the one you don't need)
 			window.savePPM("saved-frames", paddedCounter + ".ppm");
-			window.saveBMP("saved-frames", paddedCounter + ".bmp");
+			// window.saveBMP("saved-frames", paddedCounter + ".bmp");
 			frameCounter++;
 		}
 	}

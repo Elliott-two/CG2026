@@ -1,5 +1,6 @@
 #include "RayTracedRenderer.h"
 
+// Get all the needed external variables and vectors
 extern const int WIDTH;
 extern const int HEIGHT;
 extern std::vector<ModelTriangle> triangles;
@@ -9,13 +10,12 @@ extern float focalLength;
 extern glm::vec3 lightPosition;
 extern std::vector<std::array<glm::vec3, 3>> vertexNormalsByTriangle;
 
+// All of my preset needed things
 constexpr float PI = 3.14159265358979323846f;
 constexpr float IMAGE_SCALE = 500.0f;
 constexpr float LIGHT_INTENSITY = 10.0f;
 constexpr float AMBIENT = 0.25f;
 constexpr float SPECULAR_EXPONENT = 64.0f;
-
-RayTracedRenderer::RayTracedRenderer() {}
 
 void RayTracedRenderer::draw(DrawingWindow &window)
 {
@@ -216,36 +216,6 @@ std::array<Colour, 3> RayTracedRenderer::gourandShading(RayTriangleIntersection 
     for (int i = 0; i < 3; ++i)
         colours[i] = calculateLighting(triangle.vertices[i], normals[i], triangle.colour, triangle.normal);
     return colours;
-}
-
-std::array<glm::vec3, 3> RayTracedRenderer::vertexNormals(const ModelTriangle &triangle)
-{
-    float smoothThreshold = -1.0f; // include all faces sharing the vertex
-    std::array<glm::vec3, 3> normals;
-
-    for (int i = 0; i < 3; ++i)
-    {
-        glm::vec3 vertex = triangle.vertices[i];
-        glm::vec3 normalSum(0.0f);
-
-        // Loop through all triangles to find those that share the vertex
-        for (const ModelTriangle &other : triangles)
-        {
-            if (other.vertices[0] != vertex && other.vertices[1] != vertex && other.vertices[2] != vertex)
-                continue;
-
-            // Calculate the normal of the other triangle
-            glm::vec3 otherNormal = glm::normalize(glm::cross(other.vertices[1] - other.vertices[0], other.vertices[2] - other.vertices[0]));
-
-            // Check if the angle between the normals is within the smooth threshold
-            // If the dot product is greater than the threshold, they are considered smooth
-            if (glm::dot(otherNormal, triangle.normal) > smoothThreshold)
-                normalSum += otherNormal;
-        }
-        // Normalize the summed normal to get the average normal for the vertex
-        normals[i] = glm::normalize(normalSum);
-    }
-    return normals;
 }
 
 // Not used for Phong but for Gouraud Shading
