@@ -7,6 +7,7 @@ extern glm::vec3 cameraPosition;
 extern glm::mat3 cameraOrientation;
 extern float focalLength;
 extern glm::vec3 lightPosition;
+extern std::vector<std::array<glm::vec3, 3>> vertexNormalsByTriangle;
 
 constexpr float PI = 3.14159265358979323846f;
 constexpr float IMAGE_SCALE = 500.0f;
@@ -78,9 +79,11 @@ RayTriangleIntersection RayTracedRenderer::getClosestValidIntersection(glm::vec3
     // Flag to check if any valid intersection was found
     bool foundIntersection = false;
 
-    // Loop through all triangles by reference
-    for (const ModelTriangle &triangle : triangles)
+    // Index based loop for normal vector
+    for (size_t i = 0; i < triangles.size(); ++i)
     {
+        const ModelTriangle &triangle = triangles[i];
+
         // Given formula
         glm::vec3 e0 = triangle.vertices[1] - triangle.vertices[0];
         glm::vec3 e1 = triangle.vertices[2] - triangle.vertices[0];
@@ -104,7 +107,9 @@ RayTriangleIntersection RayTracedRenderer::getClosestValidIntersection(glm::vec3
                 closestIntersection.distanceFromCamera = t;
                 closestIntersection.intersectionPoint = startPoint + rayDirection * t;
                 closestIntersection.intersectedTriangle = triangle;
-                closestIntersection.intersectedTriangle.normal = triangle.normal;
+
+                // Index into vertextNormalsByTriangles
+                closestIntersection.triangleIndex = i;
             }
         }
     }
@@ -119,7 +124,7 @@ RayTriangleIntersection RayTracedRenderer::getClosestValidIntersection(glm::vec3
 
 Colour RayTracedRenderer::calculateLighting(glm::vec3 point, glm::vec3 normal, Colour baseColour, glm::vec3 faceNormal)
 {
-    // Face the normal towards the light
+    // Normal used for shading
     glm::vec3 n = glm::normalize(normal);
 
     // Offset to avoid shadow acne
@@ -130,6 +135,7 @@ Colour RayTracedRenderer::calculateLighting(glm::vec3 point, glm::vec3 normal, C
     glm::vec3 toLight = lightPosition - origin;
 
     // Using glm::length to calculate the distance to the light source
+    // As given in lectures
     float distanceToLight = glm::length(toLight);
 
     // Normalize the direction to the light source
@@ -138,20 +144,16 @@ Colour RayTracedRenderer::calculateLighting(glm::vec3 point, glm::vec3 normal, C
     // Bool to check if the point is in shadow
     bool shadowed = false;
 
-    // Check if the point is in shadow by casting a ray towards the light source
-    // Only do this if the light is facing the surface (i.e., the dot product is positive)
+    // Only if its between the point and the light source, then its in shadow
     if (glm::dot(faceNormal, lightDir) > 0.0f)
     {
-        // Send a ray from the point to the light source and check for intersections with other triangles
         RayTriangleIntersection hit = getClosestValidIntersection(origin, lightDir);
-        // Only if its between the point and the light source, then its in shadow
+        // Only in shadow if the blocker is between the point and the light
         shadowed = hit.distanceFromCamera > 0.0f && hit.distanceFromCamera < distanceToLight;
     }
 
     // Default ambient defined above
     float brightness = AMBIENT;
-    // Specular component for shiny surfaces
-    // Automatically set to 0 if in shadow, otherwise calculated below
     float specular = 0.0f;
 
     // Check Shadowed
@@ -159,21 +161,22 @@ Colour RayTracedRenderer::calculateLighting(glm::vec3 point, glm::vec3 normal, C
     {
         // Calculate the angle of incidence using the dot product
         float incidentAngle = glm::dot(n, lightDir);
-        // Calculate using SCIENCE?!?! (Might change if it looks bad)
 
+        // Calculate using SCIENCE?!?! (Might change if it looks bad)
         float proximity = LIGHT_INTENSITY / (4.0f * PI * distanceToLight * distanceToLight);
+
         // Add the proximity calculation to the brightness, this means that nothing is dimmer than the ambient light
         brightness += proximity * std::max(incidentAngle, 0.0f);
 
         // If the incident angle is positive, calculate the specular reflection component
         if (incidentAngle > 0.0f)
         {
-            // Calculate the reflection direction of the light
-            // This is the reversed given formula? Not sure why this works it was found from googling desperately
+            // Reflect the light direction about the normal
             glm::vec3 reflected = (2.0f * glm::dot(lightDir, n) * n) - lightDir;
 
             // Calculate the view direction from the point to the camera
             glm::vec3 viewDir = glm::normalize(cameraPosition - point);
+
             // Specular component from given formula
             // Looks nicer like this
             specular = 0.5f * std::pow(
@@ -191,6 +194,7 @@ Colour RayTracedRenderer::calculateLighting(glm::vec3 point, glm::vec3 normal, C
     brightness = glm::clamp(brightness, 0.0f, 1.0f);
 
     // Return the final colour by scaling the base colour by the calculated brightness
+
     return Colour(
         std::min(255, int(std::round(baseColour.red * brightness + 255.0f * specular))),
         std::min(255, int(std::round(baseColour.green * brightness + 255.0f * specular))),
@@ -202,11 +206,13 @@ std::array<Colour, 3> RayTracedRenderer::gourandShading(RayTriangleIntersection 
     // Define the triangle and get the vertex normals
     const ModelTriangle &triangle = intersection.intersectedTriangle;
 
-    // Get the normals of the vertices of the triangle
-    std::array<glm::vec3, 3> normals = vertexNormals(triangle);
+    // Bounds-checked lookup by index, falling back to the flat normal
+    std::array<glm::vec3, 3> normals = {triangle.normal, triangle.normal, triangle.normal};
+    if (intersection.triangleIndex < vertexNormalsByTriangle.size())
+        normals = vertexNormalsByTriangle[intersection.triangleIndex];
 
+    // Light each vertex using its smooth normal (and the true face normal for shadows)
     std::array<Colour, 3> colours;
-    // Calculate the lighting for each vertex using its normal and the base colour of the triangle
     for (int i = 0; i < 3; ++i)
         colours[i] = calculateLighting(triangle.vertices[i], normals[i], triangle.colour, triangle.normal);
     return colours;
@@ -219,7 +225,6 @@ std::array<glm::vec3, 3> RayTracedRenderer::vertexNormals(const ModelTriangle &t
 
     for (int i = 0; i < 3; ++i)
     {
-        // Assign vertices
         glm::vec3 vertex = triangle.vertices[i];
         glm::vec3 normalSum(0.0f);
 
@@ -259,11 +264,12 @@ Colour RayTracedRenderer::baryentricColourWeights(RayTriangleIntersection inters
 
     return Colour(red, green, blue);
 }
+
 // Same as the previous but without colour
 glm::vec3 RayTracedRenderer::barycentricWeights(const RayTriangleIntersection &intersection)
 {
     // Get the triangle and intersection point
-    ModelTriangle triangle = intersection.intersectedTriangle;
+    const ModelTriangle &triangle = intersection.intersectedTriangle;
     glm::vec3 point = intersection.intersectionPoint;
 
     glm::vec3 normal = glm::cross(triangle.vertices[1] - triangle.vertices[0], triangle.vertices[2] - triangle.vertices[0]);
@@ -280,12 +286,21 @@ Colour RayTracedRenderer::phongShading(const RayTriangleIntersection &intersecti
     // Get the needed fields for aesthetic calling
     Colour colour = intersection.intersectedTriangle.colour;
     glm::vec3 triangleNormal = intersection.intersectedTriangle.normal;
-    std::array<glm::vec3, 3> normals = vertexNormals(intersection.intersectedTriangle);
+
+    // Look up the precomputed vertex normals by triangle index (no silent zero insertion)
+    if (intersection.triangleIndex >= vertexNormalsByTriangle.size())
+    {
+        // Fall back to flat shading if something is out of sync
+        return calculateLighting(intersection.intersectionPoint, triangleNormal, colour, triangleNormal);
+    }
+    const std::array<glm::vec3, 3> &normals = vertexNormalsByTriangle[intersection.triangleIndex];
+
     glm::vec3 weights = barycentricWeights(intersection);
 
     // Interpolate the normal, then renormalise (interpolated normals are shorter than 1)
-    glm::vec3 normal = glm::normalize(weights.x * normals[0] + weights.y * normals[1] + weights.z * normals[2]);
+    glm::vec3 interpolated = weights.x * normals[0] + weights.y * normals[1] + weights.z * normals[2];
+    glm::vec3 normal = (glm::length(interpolated) > 1e-6f) ? glm::normalize(interpolated) : triangleNormal;
 
     // Light the actual hit point with the interpolated normal
-    return calculateLighting(intersection.intersectionPoint, triangleNormal, colour, normal);
+    return calculateLighting(intersection.intersectionPoint, normal, colour, triangleNormal);
 }

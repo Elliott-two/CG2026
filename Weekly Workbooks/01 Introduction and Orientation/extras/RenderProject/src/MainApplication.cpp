@@ -50,6 +50,7 @@ std::string objFilenameSphere = "../../../07 Lighting and Shading/resources/sphe
 std::vector<ModelTriangle> triangles;
 std::vector<Colour> palette;
 std::unordered_map<std::string, Colour> paletteMap;
+std::vector<std::array<glm::vec3, 3>> vertexNormalsByTriangle;
 
 float focalLength = 2.0;
 glm::vec3 cameraPosition(0.0, 0.0, 4.0);
@@ -378,6 +379,37 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 	return modelTriangles;
 }
 
+std::array<glm::vec3, 3> vertexNormals(const ModelTriangle &triangle)
+{
+	float smoothThreshold = -1.0f; // include all faces sharing the vertex
+	std::array<glm::vec3, 3> normals;
+
+	for (int i = 0; i < 3; ++i)
+	{
+		// Assign vertices
+		glm::vec3 vertex = triangle.vertices[i];
+		glm::vec3 normalSum(0.0f);
+
+		// Loop through all triangles to find those that share the vertex
+		for (const ModelTriangle &other : triangles)
+		{
+			if (other.vertices[0] != vertex && other.vertices[1] != vertex && other.vertices[2] != vertex)
+				continue;
+
+			// Calculate the normal of the other triangle
+			glm::vec3 otherNormal = glm::normalize(glm::cross(other.vertices[1] - other.vertices[0], other.vertices[2] - other.vertices[0]));
+
+			// Check if the angle between the normals is within the smooth threshold
+			// If the dot product is greater than the threshold, they are considered smooth
+			if (glm::dot(otherNormal, triangle.normal) > smoothThreshold)
+				normalSum += otherNormal;
+		}
+		// Normalize the summed normal to get the average normal for the vertex
+		normals[i] = glm::normalize(normalSum);
+	}
+	return normals;
+}
+
 // Parse the colours
 std::vector<Colour> colourParseOBJ(const std::string &filename)
 {
@@ -458,6 +490,13 @@ int main(int argc, char *argv[])
 
 	// Parse the triangles
 	triangles = triangleParseOBJ(objFilenameSphere + ".obj", 0.35f);
+
+	vertexNormalsByTriangle.clear();
+	vertexNormalsByTriangle.reserve(triangles.size());
+	for (const ModelTriangle &triangle : triangles)
+	{
+		vertexNormalsByTriangle.push_back(vertexNormals(triangle));
+	}
 
 	SDL_Event event;
 	while (true)
