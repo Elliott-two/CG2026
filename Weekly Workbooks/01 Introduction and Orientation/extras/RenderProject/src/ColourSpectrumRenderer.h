@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Renderer.h"
-#include "../libs/sdw/Utils.h"
+#include "Utils.h"
 
 class ColourSpectrumRenderer : public Renderer
 {

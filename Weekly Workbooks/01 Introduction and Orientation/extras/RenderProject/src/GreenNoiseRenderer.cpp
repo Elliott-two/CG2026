@@ -1,5 +1,6 @@
 #include "GreenNoiseRenderer.h"
 
+// Same as red and blue
 void GreenNoiseRenderer::draw(DrawingWindow &window)
 {
     window.clearPixels();
