@@ -32,6 +32,15 @@ bool isSphereShowing = true;
 bool isBlueBoxShowing = true;
 bool isRedBoxShowing = true;
 
+// Flag to enable/disable depth of field effect
+bool depthOfFieldEnabled = true;
+// Flag to enable/disable swirl effect
+bool swirlEnabled = false;
+// Flag to enable/disable reflex lens effect
+bool reflexLensEnabled = true;
+
+bool worldMirroringEnabled = true; // Flag to enable/disable world mirroring
+
 // Texture maps
 std::vector<TextureMap> textures;
 std::unordered_map<std::string, int> textureIndexByMaterial;
@@ -67,7 +76,11 @@ std::string objFilename = "../../../05 Navigation and Transformation/models/text
 std::string objFilenameSphere = "../../../07 Lighting and Shading/resources/sphere";
 
 // Core 3D rendering data structures (for when we eventually get around to working in 3D ;o)
-float focalLength = 2.0;
+float focalLength = 2.0f;
+float focalDistance = 4.0f;
+float lenseSize = 0.13f;
+int raysPerPixel = 24;
+
 glm::vec3 cameraPosition(0.0, 0.0, 4.0);
 glm::mat3 cameraOrientation = glm::mat3(1.0f);
 glm::vec3 lightPosition(0.0, 0.8, 0.0);
@@ -150,6 +163,15 @@ void print(std::string s)
 // Handle all events
 void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = currentRenderer)
 {
+	if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
+	{
+		if (currentRenderer == &rayTracedRenderer)
+		{
+			rayTracedRenderer.focusOnPixel(event.button.x, event.button.y);
+		}
+		return;
+	}
+
 	if (event.type != SDL_KEYDOWN)
 		return;
 
@@ -274,7 +296,17 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 		rotateX(cameraPosition, cameraOrientation, -10);
 		break;
 	case SDLK_r:
-		print("Placeholder: toggle reflection");
+		print("Toggling world mirroring");
+		if (worldMirroringEnabled)
+		{
+			print("Disabling world mirroring");
+			worldMirroringEnabled = false;
+		}
+		else
+		{
+			print("Enabling world mirroring");
+			worldMirroringEnabled = true;
+		}
 		break;
 	case SDLK_g:
 		print("Placeholder: toggle glassy materials");
@@ -327,6 +359,49 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 			isRedBoxShowing = true;
 		}
 		break;
+	case SDLK_f:
+		print("Toggle Depth of Field");
+		if (depthOfFieldEnabled)
+		{
+			print("Disabling Depth of Field");
+			depthOfFieldEnabled = false;
+			swirlEnabled = false;	   // Disable swirl effect when depth of field is disabled
+			reflexLensEnabled = false; // Disable reflex lens effect when depth of field is disabled
+		}
+		else
+		{
+			print("Enabling Depth of Field");
+			depthOfFieldEnabled = true;
+		}
+		break;
+	case SDLK_z:
+		print("Toggle Swirl Effect");
+		if (swirlEnabled)
+		{
+			print("Disabling Swirl Effect");
+			swirlEnabled = false;
+		}
+		else
+		{
+			print("Enabling Swirl Effect");
+			swirlEnabled = true;
+			reflexLensEnabled = false; // Disable reflex lens effect when swirl is enabled
+		}
+		break;
+	case SDLK_x:
+		print("Toggle Reflex Lens Effect");
+		if (reflexLensEnabled)
+		{
+			print("Disabling Reflex Lens Effect");
+			reflexLensEnabled = false;
+		}
+		else
+		{
+			print("Enabling Reflex Lens Effect");
+			reflexLensEnabled = true;
+			swirlEnabled = false; // Disable swirl effect when reflex lens is enabled
+		}
+		break;
 	default:
 		break;
 	}
@@ -357,7 +432,10 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 	// Default Colour if doesn't work
 	Colour colour(255, 255, 255);
 
+	// Keep track of the current material name for the triangles
 	std::string currentMaterialName;
+
+	bool isCurrentMirror = false; // Flag to indicate if the current material is a mirror
 
 	// While getting lines
 	while (std::getline(file, line))
@@ -414,8 +492,17 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 				// Convert the texture index to an integer and adjust for 0-based indexing, if it exists; otherwise, set to -1
 				texIdx[i] = (parts.size() > 1 && !parts[1].empty()) ? std::stoi(parts[1]) - 1 : -1;
 			}
-
+			if (colour.name == "Mirror")
+			{
+				isCurrentMirror = true;
+			}
+			else
+			{
+				isCurrentMirror = false;
+			}
 			ModelTriangle triangle(vertices[idx[0]], vertices[idx[1]], vertices[idx[2]], colour);
+
+			triangle.isMirror = isCurrentMirror; // Set the isMirror flag for the triangle
 			// If there is a texture
 			if (currentTextureIndex >= 0)
 			{

@@ -6,6 +6,7 @@ class RayTracedRenderer : public Renderer
 {
 public:
     void draw(DrawingWindow &window) override;
+    void focusOnPixel(int x, int y);
 
 private:
     // Core raytracing functions
@@ -16,6 +17,14 @@ private:
     // Shading
     std::array<Colour, 3> gourandShading(RayTriangleIntersection intersection);
     Colour phongShading(const RayTriangleIntersection &intersection);
+    RayTriangleIntersection mirrorShading(RayTriangleIntersection intersection);
+    Colour depthOfFieldShading(float u, float v);
+
+    // Helpers
+    glm::vec2 randomPointInCircle(float radius);
+    glm::vec2 randomPointInCircleSwirl(float radius, float u, float v, float swirlFactor);
+    glm::vec2 randomPointInReflexLens(float outerRadius, float innerRatio);
+    Colour shadingHelper(RayTriangleIntersection intersection);
 
     // Barycentric
     glm::vec3 barycentricWeights(const RayTriangleIntersection &intersection);
