@@ -6,11 +6,16 @@
 #include "Colour.h"
 #include "TexturePoint.h"
 
-struct ModelTriangle {
+struct ModelTriangle
+{
 	std::array<glm::vec3, 3> vertices{};
 	std::array<TexturePoint, 3> texturePoints{};
 	Colour colour{};
 	glm::vec3 normal{};
+
+	// Added objectName and textureIndex to ModelTriangle for better identification and texture mapping
+	std::string objectName{};
+	int textureIndex = -1;
 
 	ModelTriangle();
 	ModelTriangle(const glm::vec3 &v0, const glm::vec3 &v1, const glm::vec3 &v2, Colour trigColour);

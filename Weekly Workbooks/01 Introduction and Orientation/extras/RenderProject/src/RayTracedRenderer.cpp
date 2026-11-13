@@ -4,25 +4,74 @@
 extern const int WIDTH;
 extern const int HEIGHT;
 extern std::vector<ModelTriangle> triangles;
+extern std::vector<ModelTriangle> nonCulledTriangles;
 extern glm::vec3 cameraPosition;
 extern glm::mat3 cameraOrientation;
 extern float focalLength;
 extern glm::vec3 lightPosition;
 extern std::vector<std::array<glm::vec3, 3>> vertexNormalsByTriangle;
+extern std::vector<TextureMap> textures;
+
+// Bools to check whether we want Gouraud or Phong shading
+extern bool GouraudShadingEnabled;
+extern bool PhongShadingEnabled;
+
+// Bools to check if the sphere and boxes are showing, for video purposes
+extern bool isSphereShowing;
+extern bool isBlueBoxShowing;
+extern bool isRedBoxShowing;
 
 // All of my preset needed things
 constexpr float PI = 3.14159265358979323846f;
 constexpr float IMAGE_SCALE = 500.0f;
 constexpr float LIGHT_INTENSITY = 10.0f;
 constexpr float AMBIENT = 0.25f;
-constexpr float SPECULAR_EXPONENT = 64.0f;
+constexpr float SPECULAR_EXPONENT = 32.0f;
 
 void RayTracedRenderer::draw(DrawingWindow &window)
 {
+    nonCulledTriangles.clear();
+
+    for (const ModelTriangle &triangle : triangles)
+    {
+        // Skip rendering based on object name and visibility flags
+        if ((triangle.objectName == "sphere" && !isSphereShowing) ||
+            (triangle.objectName == "tall_box" && !isBlueBoxShowing) ||
+            (triangle.objectName == "short_box" && !isRedBoxShowing))
+        {
+            continue; // Skip this triangle
+        }
+        nonCulledTriangles.push_back(triangle);
+    }
+
     // For easier loading speeds
     static glm::vec3 prevCameraPosition = glm::vec3(std::numeric_limits<float>::max());
     static glm::mat3 prevCameraOrientation = glm::mat3(0.0f);
     static bool frameRendered = false;
+
+    // Read the current mode each frame so changes made by MainApplication are observed.
+    const int shadingMode = GouraudShadingEnabled ? 1
+                            : PhongShadingEnabled ? 2
+                                                  : 0; // 1 for Gouraud, 2 for Phong, 0 for flat
+
+    // Bools and ints to check if the shading mode or visibility of objects has changed since the last frame
+    static int prevShadingMode = shadingMode;
+    static bool prevSphereShowing = isSphereShowing;
+    static bool prevBlueBoxShowing = isBlueBoxShowing;
+    static bool prevRedBoxShowing = isRedBoxShowing;
+
+    // Check for change
+    if (prevShadingMode != shadingMode ||
+        prevSphereShowing != isSphereShowing ||
+        prevBlueBoxShowing != isBlueBoxShowing ||
+        prevRedBoxShowing != isRedBoxShowing)
+    {
+        frameRendered = false; // Force re-render if anything visible changed
+        prevShadingMode = shadingMode;
+        prevSphereShowing = isSphereShowing;
+        prevBlueBoxShowing = isBlueBoxShowing;
+        prevRedBoxShowing = isRedBoxShowing;
+    }
 
     // Check if the camera has moved or rotated since the last frame
     bool cameraMoved = (cameraPosition != prevCameraPosition) || (cameraOrientation != prevCameraOrientation);
@@ -49,12 +98,37 @@ void RayTracedRenderer::draw(DrawingWindow &window)
 
             if (intersection.distanceFromCamera > 0) // Valid intersection found
             {
-                // Calculate lighting at the intersection point
-                // Previous methods
-                // Colour pixelColour = calculateLighting(intersection.intersectionPoint, intersection.intersectedTriangle.normal, intersection.intersectedTriangle.colour);
-                // Colour pixelColour = baryentricColourWeights(intersection, gourandShading(intersection));
+                // Define colour and copy RayTriangleIntersection for shading calculations
+                Colour pixelColour;
+                RayTriangleIntersection shaded = intersection;
 
-                Colour pixelColour = phongShading(intersection);
+                // If the intersected triangle has a texture, apply textured shading
+                if (shaded.intersectedTriangle.textureIndex >= 0)
+                {
+                    shaded.intersectedTriangle.colour = texturedShading(intersection);
+                }
+
+                // Determine the shading method based on the enabled flags
+                if (GouraudShadingEnabled)
+                {
+                    // Gouraud shading: Calculate light at vertices, then interpolate vertex colors using barycentric coordinates
+                    pixelColour = baryentricColourWeights(shaded, gourandShading(intersection));
+                }
+                else if (PhongShadingEnabled)
+                {
+                    // Phong shading: Interpolate normals, then calculate light per-pixel
+                    pixelColour = phongShading(shaded);
+                }
+                else
+                {
+                    // Flat shading (Default): Calculate light once for the whole face using the face normal
+                    pixelColour = calculateLighting(
+                        shaded.intersectionPoint,
+                        shaded.intersectedTriangle.normal,
+                        shaded.intersectedTriangle.colour,
+                        shaded.intersectedTriangle.normal);
+                }
+
                 window.setPixelColour(x, y, (pixelColour.red << 16) | (pixelColour.green << 8) | pixelColour.blue);
             }
             else
@@ -80,9 +154,9 @@ RayTriangleIntersection RayTracedRenderer::getClosestValidIntersection(glm::vec3
     bool foundIntersection = false;
 
     // Index based loop for normal vector
-    for (size_t i = 0; i < triangles.size(); ++i)
+    for (size_t i = 0; i < nonCulledTriangles.size(); ++i)
     {
-        const ModelTriangle &triangle = triangles[i];
+        const ModelTriangle &triangle = nonCulledTriangles[i];
 
         // Given formula
         glm::vec3 e0 = triangle.vertices[1] - triangle.vertices[0];
@@ -155,6 +229,8 @@ Colour RayTracedRenderer::calculateLighting(glm::vec3 point, glm::vec3 normal, C
     // Default ambient defined above
     float brightness = AMBIENT;
     float specular = 0.0f;
+
+    // shadowed = false; // For testing, comment this out to see shadows
 
     // Check Shadowed
     if (!shadowed)
@@ -273,4 +349,41 @@ Colour RayTracedRenderer::phongShading(const RayTriangleIntersection &intersecti
 
     // Light the actual hit point with the interpolated normal
     return calculateLighting(intersection.intersectionPoint, normal, colour, triangleNormal);
+}
+
+Colour RayTracedRenderer::texturedShading(RayTriangleIntersection intersection)
+{
+    const ModelTriangle &triangle = intersection.intersectedTriangle;
+
+    const TextureMap &texture = textures[triangle.textureIndex];
+
+    // Barycentric weights of the hit point
+    glm::vec3 weights = barycentricWeights(intersection);
+
+    // Interpolate the X texture point using barycentric weights
+    float textureX = weights.x * triangle.texturePoints[0].x +
+                     weights.y * triangle.texturePoints[1].x +
+                     weights.z * triangle.texturePoints[2].x;
+
+    // Interpolate the Y texture point using barycentric weights
+    float textureY = weights.x * triangle.texturePoints[0].y +
+                     weights.y * triangle.texturePoints[1].y +
+                     weights.z * triangle.texturePoints[2].y;
+
+    // Wrap the texture coordinates to ensure they are within the texture bounds
+    textureX = textureX - std::floor(textureX / texture.width) * texture.width;
+    textureY = textureY - std::floor(textureY / texture.height) * texture.height;
+    // Round to the nearest pixel
+    int texX = static_cast<int>(std::round(textureX));
+    int texY = static_cast<int>(std::round(textureY));
+
+    // Clamp to the texture, same as the rasteriser
+    texX = std::max(0, std::min(texX, static_cast<int>(texture.width) - 1));
+    texY = std::max(0, std::min(texY, static_cast<int>(texture.height) - 1));
+
+    // Get the pixel colour from the texture map
+    uint32_t pixel = texture.pixels[texY * static_cast<int>(texture.width) + texX];
+
+    // Pack the pixel colour into a Colour and return it
+    return Colour((pixel >> 16) & 0xFF, (pixel >> 8) & 0xFF, pixel & 0xFF);
 }

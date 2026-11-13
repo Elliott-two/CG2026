@@ -17,6 +17,9 @@ constexpr float ORBIT_X_DEGREES_PER_FRAME = 0.5f;
 // PI
 constexpr float PI = 3.14159265358979323846f;
 
+// Get all the texture maps
+extern std::vector<TextureMap> textures;
+
 // Rotate Y for orbit
 glm::mat3 PointCloudRenderer::rotationY(float degrees)
 {
@@ -61,20 +64,6 @@ void PointCloudRenderer::orbitX(float degrees)
     cameraOrientation = rotationMatrix * cameraOrientation;
 }
 
-// Check for textured
-bool PointCloudRenderer::isTextured(const ModelTriangle &triangle)
-{
-    for (const TexturePoint &texturePoint : triangle.texturePoints)
-    {
-
-        if (texturePoint.x != 0.0f || texturePoint.y != 0.0f)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
 // Main Drawing
 void PointCloudRenderer::draw(DrawingWindow &window)
 {
@@ -110,7 +99,7 @@ void PointCloudRenderer::draw(DrawingWindow &window)
         }
 
         // Check textured
-        if (isTextured(triangle))
+        if (triangle.textureIndex >= 0)
         {
             // If textured, loop through textures with depth
             for (int i = 0; i < 3; i++)
@@ -123,7 +112,7 @@ void PointCloudRenderer::draw(DrawingWindow &window)
             // Textured
             texturedModelTriangle(
                 window,
-                CanvasTriangle(vertex[0], vertex[1], vertex[2]), textureMap);
+                CanvasTriangle(vertex[0], vertex[1], vertex[2]), textures[triangle.textureIndex]);
         }
         else
         {
