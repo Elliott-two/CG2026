@@ -25,6 +25,8 @@ extern bool WireframeBool;
 int isOrbiting = 0; // 0 = not orbiting, 1 = clockwise, -1 = counterclockwise
 bool isLookAtEnabled = false;
 
+bool forceRayTraceRedraw = false;
+
 bool GouraudShadingEnabled = false;
 bool PhongShadingEnabled = false;
 
@@ -33,11 +35,11 @@ bool isBlueBoxShowing = true;
 bool isRedBoxShowing = true;
 
 // Flag to enable/disable depth of field effect
-bool depthOfFieldEnabled = true;
+bool depthOfFieldEnabled = false;
 // Flag to enable/disable swirl effect
 bool swirlEnabled = false;
 // Flag to enable/disable reflex lens effect
-bool reflexLensEnabled = true;
+bool reflexLensEnabled = false;
 
 bool worldMirroringEnabled = true; // Flag to enable/disable world mirroring
 
@@ -67,13 +69,13 @@ RayTracedRenderer rayTracedRenderer = RayTracedRenderer();
 // The default starting point
 Renderer *currentRenderer = &pointCloudRenderer;
 
-// Unnecessary for now
 bool savingFrames = false;
 int frameCounter = 0;
+bool newFrameRendered = false;
 
 // Filenames
-std::string objFilename = "../../../05 Navigation and Transformation/models/textured-cornell-box";
-std::string objFilenameSphere = "../../../07 Lighting and Shading/resources/sphere";
+std::string objFilename = "/Assets/textured-cornell-box";
+std::string objFilenameSphere = "/Assets/sphere";
 
 // Core 3D rendering data structures (for when we eventually get around to working in 3D ;o)
 float focalLength = 2.0f;
@@ -105,11 +107,19 @@ void loadTexture(const std::string &materialName, const std::string &path)
 
 void lookAt(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, const glm::vec3 &target)
 {
+	if (glm::length(cameraPosition - target) < 1e-5f)
+		return;
+
 	// Calculate the forward vector
 	glm::vec3 forward = glm::normalize(cameraPosition - target);
 
+	glm::vec3 worldUp(0.0f, 1.0f, 0.0f);
+
+	if (std::abs(forward.y) > 0.999f)
+		worldUp = glm::vec3(0.0f, 0.0f, 1.0f);
+
 	// Calculate the right vector by crossing the global "up"
-	glm::vec3 right = glm::normalize(glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), forward));
+	glm::vec3 right = glm::normalize(glm::cross(worldUp, forward));
 
 	// Calculate the true up vector for the camera
 	glm::vec3 up = glm::cross(forward, right);
@@ -153,6 +163,35 @@ void rotateY(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, int degree
 	cameraPosition = rotationMatrix * cameraPosition;
 }
 
+void panCamera(glm::mat3 &cameraOrientation, int degrees)
+{
+	float radians = degrees * (PI / 180.0);
+	float cosine = std::cos(radians);
+	float sine = std::sin(radians);
+	glm::mat3 rotationMatrix = glm::mat3(
+		glm::vec3(cosine, 0.0f, -sine),
+		glm::vec3(0.0f, 1.0f, 0.0f),
+		glm::vec3(sine, 0.0f, cosine));
+	cameraOrientation = rotationMatrix * cameraOrientation;
+}
+
+void tiltCamera(glm::mat3 &cameraOrientation, int degrees)
+{
+	// Stop the camera from tilting too far up or down
+	float forwardY = -cameraOrientation[2].y;
+	if ((degrees > 0 && forwardY > 0.95f) || (degrees < 0 && forwardY < -0.95f))
+		return;
+
+	float radians = degrees * (PI / 180.0);
+	float cosine = std::cos(radians);
+	float sine = std::sin(radians);
+	glm::mat3 rotationMatrix = glm::mat3(
+		glm::vec3(1.0f, 0.0f, 0.0f),
+		glm::vec3(0.0f, cosine, sine),
+		glm::vec3(0.0f, -sine, cosine));
+	cameraOrientation = cameraOrientation * rotationMatrix;
+}
+
 // I hate hate hate std::cout and std::endl it looks so ugly
 // So i made this cause its so much easier
 void print(std::string s)
@@ -175,10 +214,15 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 	if (event.type != SDL_KEYDOWN)
 		return;
 
+	const float MOVE_STEP = 0.2f;
+	const glm::vec3 camRight = cameraOrientation[0];
+	const glm::vec3 camUp = cameraOrientation[1];
+	const glm::vec3 camForward = -cameraOrientation[2];
 	switch (event.key.keysym.sym)
 	{
 	case SDLK_1:
 		print("Switching to wireframe");
+		currentRenderer = &pointCloudRenderer;
 		WireframeBool = true;
 		break;
 	case SDLK_2:
@@ -189,43 +233,52 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 	case SDLK_3:
 		print("Switching to ray tracing render");
 		currentRenderer = &rayTracedRenderer;
+		forceRayTraceRedraw = true;
 		break;
 	case SDLK_EQUALS:
 		print("Moving camera in");
-		cameraPosition[2] -= 0.2;
+		cameraPosition += camForward * MOVE_STEP;
 		break;
 	case SDLK_MINUS:
 		print("Moving camera out");
-		cameraPosition[2] += 0.2;
+		cameraPosition -= camForward * MOVE_STEP;
 		break;
 	case SDLK_UP:
 		print("Moving camera up");
-		cameraPosition[1] += 0.2;
+		cameraPosition += camUp * MOVE_STEP;
 		break;
 	case SDLK_DOWN:
 		print("Moving camera down");
-		cameraPosition[1] -= 0.2;
+		cameraPosition -= camUp * MOVE_STEP;
 		break;
 	case SDLK_LEFT:
 		print("Moving camera left");
-		cameraPosition[0] -= 0.2;
+		cameraPosition -= camRight * MOVE_STEP;
 		break;
 	case SDLK_RIGHT:
 		print("Moving camera right");
-		cameraPosition[0] += 0.2;
+		cameraPosition += camRight * MOVE_STEP;
 		break;
 	case SDLK_a:
-		print("Rotating camera left");
-		rotateY(cameraPosition, cameraOrientation, 10);
+		print("Panning camera left");
+		panCamera(cameraOrientation, 6);
 		break;
 	case SDLK_d:
-		print("Rotating camera right");
-		rotateY(cameraPosition, cameraOrientation, -10);
+		print("Panning camera right");
+		panCamera(cameraOrientation, -6);
+		break;
+	case SDLK_w:
+		print("Tilting camera up");
+		tiltCamera(cameraOrientation, 6);
+		break;
+	case SDLK_s:
+		print("Tilting camera down");
+		tiltCamera(cameraOrientation, -6);
 		break;
 	case SDLK_COMMA:
 		if (isOrbiting == 0)
 		{
-			print("Orbiting camera clockwise around the object in the X axis");
+			print("Orbiting camera clockwise around the object in the Y axis");
 			isOrbiting = 1;
 		}
 		else
@@ -237,7 +290,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 	case SDLK_PERIOD:
 		if (isOrbiting == 0)
 		{
-			print("Orbiting camera counterclockwise around the object in the X axis");
+			print("Orbiting camera counterclockwise around the object in the Y axis");
 			isOrbiting = -1;
 		}
 		else
@@ -245,10 +298,6 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 			print("Stopping orbiting");
 			isOrbiting = 0;
 		}
-		break;
-	case SDLK_w:
-		print("Rotating camera up");
-		rotateX(cameraPosition, cameraOrientation, 10);
 		break;
 	case SDLK_4:
 		print("Toggle Gouraud shading");
@@ -290,10 +339,6 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 			print("Enabling Lookat");
 			isLookAtEnabled = true;
 		}
-		break;
-	case SDLK_s:
-		print("Rotating camera down");
-		rotateX(cameraPosition, cameraOrientation, -10);
 		break;
 	case SDLK_r:
 		print("Toggling world mirroring");
@@ -400,6 +445,19 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 			print("Enabling Reflex Lens Effect");
 			reflexLensEnabled = true;
 			swirlEnabled = false; // Disable swirl effect when reflex lens is enabled
+		}
+		break;
+	case SDLK_p:
+		print("Toggle saving frames");
+		if (savingFrames)
+		{
+			print("Stopping saving frames");
+			savingFrames = false;
+		}
+		else
+		{
+			print("Starting saving frames");
+			savingFrames = true;
 		}
 		break;
 	default:
@@ -698,25 +756,22 @@ int main(int argc, char *argv[])
 	while (true)
 	{
 		// We MUST poll for events - otherwise the window will freeze !
-		if (window.pollForInputEvents(event))
+		while (window.pollForInputEvents(event))
 			handleEvent(event, window);
+
+		newFrameRendered = (currentRenderer != &rayTracedRenderer);
 		// In C++ we can't use "." notation for dynamic dispatch, so we have to use -> instead :o(
 		currentRenderer->draw(window);
 
 		if (isOrbiting != 0)
-		{
 			rotateY(cameraPosition, cameraOrientation, isOrbiting);
-			if (isLookAtEnabled)
-			{
-				lookAt(cameraPosition, cameraOrientation, glm::vec3(0.0f, 0.0f, 0.0f));
-			}
-		}
+		if (isLookAtEnabled)
+			lookAt(cameraPosition, cameraOrientation, glm::vec3(0.0f));
 		// Need to ask the SDL window to render the frame, otherwise nothing actually gets shown on the screen !
 		window.renderFrame();
-		if (savingFrames && (tempCameraPosition != cameraPosition || tempCameraOrientation != cameraOrientation))
+		bool cameraChanged = (tempCameraPosition != cameraPosition || tempCameraOrientation != cameraOrientation);
+		if (savingFrames && newFrameRendered && (cameraChanged || currentRenderer == &rayTracedRenderer))
 		{
-			tempCameraPosition = cameraPosition;
-			tempCameraOrientation = cameraOrientation;
 			std::string paddedCounter = std::to_string(frameCounter);
 			while (paddedCounter.length() < 6)
 				paddedCounter = "0" + paddedCounter;
@@ -725,5 +780,7 @@ int main(int argc, char *argv[])
 			// window.saveBMP("saved-frames", paddedCounter + ".bmp");
 			frameCounter++;
 		}
+		tempCameraPosition = cameraPosition;
+		tempCameraOrientation = cameraOrientation;
 	}
 }

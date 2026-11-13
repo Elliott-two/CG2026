@@ -18,6 +18,13 @@ void RasterisedRenderer::simpleLine(CanvasPoint from, CanvasPoint to, Colour col
     // Number of steps is the maximum of the absolute differences in x and y coordinates for smooth line drawing
     float steps = std::max(std::abs(xDiff), std::abs(yDiff));
 
+    // Return early if the number of steps is less than 1 to avoid division by zero and unnecessary drawing
+    if (steps < 1.0f)
+    {
+        window.setPixelColour(from.x, from.y, (colour.red << 16) | (colour.green << 8) | colour.blue);
+        return;
+    }
+
     // Calculate the step size for x and y coordinates based on the number of steps
     float xStep = xDiff / steps;
     float yStep = yDiff / steps;
@@ -190,8 +197,8 @@ void RasterisedRenderer::drawStrokedTriangles(DrawingWindow &window)
 
 void RasterisedRenderer::fillFlatBottomTriangle(CanvasTriangle triangle, Colour colour, DrawingWindow &window)
 {
-    int yStart = static_cast<int>(std::round(triangle.v0().y));
-    int yEnd = static_cast<int>(std::round(triangle.v1().y));
+    int yStart = std::max(0, static_cast<int>(std::round(triangle.v0().y)));
+    int yEnd = std::min(HEIGHT - 1, static_cast<int>(std::round(triangle.v1().y)));
 
     for (int y = yStart; y <= yEnd; y++)
     {
@@ -203,8 +210,8 @@ void RasterisedRenderer::fillFlatBottomTriangle(CanvasTriangle triangle, Colour 
 
 void RasterisedRenderer::fillFlatTopTriangle(CanvasTriangle triangle, Colour colour, DrawingWindow &window)
 {
-    int yStart = static_cast<int>(std::round(triangle.v0().y));
-    int yEnd = static_cast<int>(std::round(triangle.v2().y));
+    int yStart = std::max(0, static_cast<int>(std::round(triangle.v0().y)));
+    int yEnd = std::min(HEIGHT - 1, static_cast<int>(std::round(triangle.v2().y)));
 
     for (int y = yStart; y <= yEnd; y++)
     {

@@ -97,6 +97,8 @@ void PointCloudRenderer::draw(DrawingWindow &window)
         {
             vertex[i] = projectVertexOnToCanvasPoint(cameraPosition, focalLength, triangle.vertices[i]);
         }
+        if (vertex[0].depth <= 0.0f || vertex[1].depth <= 0.0f || vertex[2].depth <= 0.0f)
+            continue;
 
         // Check textured
         if (triangle.textureIndex >= 0)
@@ -150,6 +152,9 @@ void PointCloudRenderer::drawStroked(DrawingWindow &window)
         {
             vertex[i] = projectVertexOnToCanvasPoint(cameraPosition, focalLength, triangle.vertices[i]);
         }
+
+        if (vertex[0].depth <= 0.0f || vertex[1].depth <= 0.0f || vertex[2].depth <= 0.0f)
+            continue;
 
         strokedTriangle(
             CanvasTriangle(vertex[0], vertex[1], vertex[2]), triangle.colour, window);

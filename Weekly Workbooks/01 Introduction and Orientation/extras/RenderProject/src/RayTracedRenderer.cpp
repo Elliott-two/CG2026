@@ -18,6 +18,10 @@ extern glm::vec3 lightPosition;
 extern std::vector<std::array<glm::vec3, 3>> vertexNormalsByTriangle;
 extern std::vector<TextureMap> textures;
 
+extern bool forceRayTraceRedraw;
+
+extern bool newFrameRendered;
+
 // Bools to check whether we want Gouraud or Phong shading
 extern bool GouraudShadingEnabled;
 extern bool PhongShadingEnabled;
@@ -48,6 +52,7 @@ constexpr float SWIRL_FACTOR = 4.0f;
 
 // Thread-local storage for the view origin, which is used in depth of field calculations
 static thread_local glm::vec3 viewOrigin(0.0f);
+static std::vector<int> visibleToOriginalIndex;
 
 // Bool to check if a ray intersects with a triangle using the Möller–Trumbore intersection algorithm
 // Moller Trumbore algorithm came as a result of googling how to speed up ray tracing
@@ -123,7 +128,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
     static bool prevReflexLensEnabled = reflexLensEnabled;
 
     // Check for change
-    if (prevShadingMode != shadingMode ||
+    if (forceRayTraceRedraw || prevShadingMode != shadingMode ||
         prevSphereShowing != isSphereShowing ||
         prevBlueBoxShowing != isBlueBoxShowing ||
         prevRedBoxShowing != isRedBoxShowing ||
@@ -134,7 +139,8 @@ void RayTracedRenderer::draw(DrawingWindow &window)
         prevReflexLensEnabled != reflexLensEnabled)
 
     {
-        frameRendered = false; // Force re-render if anything visible changed
+        frameRendered = false;       // Force re-render if anything visible changed
+        forceRayTraceRedraw = false; // Reset the force redraw flag
         prevShadingMode = shadingMode;
         prevSphereShowing = isSphereShowing;
         prevBlueBoxShowing = isBlueBoxShowing;
@@ -156,17 +162,16 @@ void RayTracedRenderer::draw(DrawingWindow &window)
     }
 
     nonCulledTriangles.clear();
-
-    for (const ModelTriangle &triangle : triangles)
+    visibleToOriginalIndex.clear();
+    for (size_t i = 0; i < triangles.size(); ++i)
     {
-        // Skip rendering based on object name and visibility flags
+        const ModelTriangle &triangle = triangles[i];
         if ((triangle.objectName == "sphere" && !isSphereShowing) ||
             (triangle.objectName == "tall_box" && !isBlueBoxShowing) ||
             (triangle.objectName == "short_box" && !isRedBoxShowing))
-        {
-            continue; // Skip this triangle
-        }
+            continue;
         nonCulledTriangles.push_back(triangle);
+        visibleToOriginalIndex.push_back(static_cast<int>(i));
     }
 
     for (int x = 0; x < WIDTH; ++x)
@@ -174,8 +179,8 @@ void RayTracedRenderer::draw(DrawingWindow &window)
         for (int y = 0; y < HEIGHT; ++y)
         {
             // Calculate the direction of the ray from the camera through the pixel
-            float u = (x - WIDTH / 2.0f) / (IMAGE_SCALE * focalLength);
-            float v = (HEIGHT / 2.0f - y) / (IMAGE_SCALE * focalLength);
+            float u = (x + 0.5f - WIDTH / 2.0f) / (IMAGE_SCALE * focalLength);
+            float v = (HEIGHT / 2.0f - (y + 0.5f)) / (IMAGE_SCALE * focalLength);
 
             // Normailise for consistency
             glm::vec3 rayDirection = glm::normalize(cameraOrientation * glm::vec3(u, v, -1.0f));
@@ -211,56 +216,50 @@ void RayTracedRenderer::draw(DrawingWindow &window)
     prevCameraPosition = cameraPosition;
     prevCameraOrientation = cameraOrientation;
     frameRendered = true;
+    newFrameRendered = true; // Set the flag to indicate that a new frame has been rendered
 }
 
 Colour RayTracedRenderer::shadingHelper(RayTriangleIntersection intersection)
 {
-    if (intersection.distanceFromCamera > 0) // Valid intersection found
+    if (intersection.distanceFromCamera <= 0)
+        return Colour(0, 0, 0);
+
+    // Define colour and copy RayTriangleIntersection for shading calculations
+    Colour pixelColour;
+    RayTriangleIntersection shaded = intersection;
+
+    if (shaded.intersectedTriangle.isMirror && worldMirroringEnabled)
     {
-        // Define colour and copy RayTriangleIntersection for shading calculations
-        Colour pixelColour;
-        RayTriangleIntersection shaded = intersection;
+        shaded = mirrorShading(intersection);
+        if (shaded.distanceFromCamera <= 0)
+            return Colour(0, 0, 0);
+    }
 
-        // If the intersected triangle has a texture, apply textured shading
-        if (shaded.intersectedTriangle.textureIndex >= 0)
-        {
-            // Apply textured shading
-            shaded.intersectedTriangle.colour = texturedShading(intersection);
-        }
+    if (shaded.intersectedTriangle.textureIndex >= 0)
+        shaded.intersectedTriangle.colour = texturedShading(shaded);
 
-        if (shaded.intersectedTriangle.isMirror && worldMirroringEnabled)
-        {
-            // Apply mirror shading
-            shaded = mirrorShading(intersection);
-        }
-
-        // Determine the shading method based on the enabled flags
-        if (GouraudShadingEnabled)
-        {
-            // Gouraud shading: Calculate light at vertices, then interpolate vertex colors using barycentric coordinates
-            pixelColour = baryentricColourWeights(shaded, gourandShading(shaded));
-        }
-        else if (PhongShadingEnabled)
-        {
-            // Phong shading: Interpolate normals, then calculate light per-pixel
-            pixelColour = phongShading(shaded);
-        }
-        else
-        {
-            // Flat shading (Default): Calculate light once for the whole face using the face normal
-            pixelColour = calculateLighting(
-                shaded.intersectionPoint,
-                shaded.intersectedTriangle.normal,
-                shaded.intersectedTriangle.colour,
-                shaded.intersectedTriangle.normal);
-        }
-
-        return pixelColour;
+    // Determine the shading method based on the enabled flags
+    if (GouraudShadingEnabled)
+    {
+        // Gouraud shading: Calculate light at vertices, then interpolate vertex colors using barycentric coordinates
+        pixelColour = baryentricColourWeights(shaded, gourandShading(shaded));
+    }
+    else if (PhongShadingEnabled)
+    {
+        // Phong shading: Interpolate normals, then calculate light per-pixel
+        pixelColour = phongShading(shaded);
     }
     else
     {
-        return Colour(0, 0, 0); // Black with full opacity
+        // Flat shading (Default): Calculate light once for the whole face using the face normal
+        pixelColour = calculateLighting(
+            shaded.intersectionPoint,
+            shaded.intersectedTriangle.normal,
+            shaded.intersectedTriangle.colour,
+            shaded.intersectedTriangle.normal);
     }
+
+    return pixelColour;
 }
 
 // Get the closest valid intersection of a ray with the triangles in the scene
@@ -295,7 +294,7 @@ RayTriangleIntersection RayTracedRenderer::getClosestValidIntersection(glm::vec3
     result.distanceFromCamera = bestTriangleDistance;
     result.intersectionPoint = startPoint + rayDirection * bestTriangleDistance;
     result.intersectedTriangle = nonCulledTriangles[bestIndex];
-    result.triangleIndex = bestIndex;
+    result.triangleIndex = visibleToOriginalIndex[bestIndex];
     return result;
 }
 
@@ -501,7 +500,7 @@ RayTriangleIntersection RayTracedRenderer::mirrorShading(RayTriangleIntersection
     glm::vec3 reflectedDirection = incidentDirection - 2.0f * glm::dot(incidentDirection, normal) * normal;
 
     // Get the closest valid intersection for the reflected ray, offsetting the starting point slightly to avoid self-intersection
-    RayTriangleIntersection reflectedIntersection = getClosestValidIntersection(intersection.intersectionPoint + normal * 0.001f, reflectedDirection);
+    RayTriangleIntersection reflectedIntersection = getClosestValidIntersection(intersection.intersectionPoint + reflectedDirection * 0.001f, reflectedDirection);
     return reflectedIntersection;
 }
 
@@ -635,8 +634,8 @@ Colour RayTracedRenderer::depthOfFieldShading(float u, float v)
 void RayTracedRenderer::focusOnPixel(int x, int y)
 {
     // Calculate the ray direction from the camera through the pixel (x, y)
-    float u = (x - WIDTH / 2.0f) / (IMAGE_SCALE * focalLength);
-    float v = (HEIGHT / 2.0f - y) / (IMAGE_SCALE * focalLength);
+    float u = (x + 0.5f - WIDTH / 2.0f) / (IMAGE_SCALE * focalLength);
+    float v = (HEIGHT / 2.0f - (y + 0.5f)) / (IMAGE_SCALE * focalLength);
 
     // Normalize the ray direction for consistency
     glm::vec3 rayDirection = glm::normalize(cameraOrientation * glm::vec3(u, v, -1.0f));
