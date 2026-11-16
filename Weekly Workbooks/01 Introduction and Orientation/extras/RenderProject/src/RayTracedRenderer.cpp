@@ -28,6 +28,7 @@ extern bool PhongShadingEnabled;
 
 // Flag to enable/disable world mirroring
 extern bool worldMirroringEnabled;
+extern bool worldGlassEnabled;
 
 // Flag to enable/disable depth of field effect
 extern bool depthOfFieldEnabled;
@@ -39,8 +40,6 @@ extern bool reflexLensEnabled;
 extern bool softShadowsEnabled;
 extern glm::vec3 lightMin;
 extern glm::vec3 lightMax;
-
-constexpr int SHADOW_GRID = 4;
 
 // Bools to check if the sphere and boxes are showing, for video purposes
 extern bool isSphereShowing;
@@ -55,11 +54,14 @@ constexpr float AMBIENT = 0.25f;
 constexpr float SPECULAR_EXPONENT = 32.0f;
 constexpr float REFLEX_RADIUS = 0.5f;
 constexpr float SWIRL_FACTOR = 4.0f;
+constexpr int SHADOW_GRID = 4;
+constexpr int MAX_REFRACTION_RECURSION_DEPTH = 6;
 
 // Thread-local storage for the view origin, which is used in depth of field calculations
 static thread_local glm::vec3 viewOrigin(0.0f);
 static std::vector<int> visibleToOriginalIndex;
 
+// If I need a random float
 static float randomFloat()
 {
     thread_local std::mt19937 gen(std::random_device{}());
@@ -107,6 +109,9 @@ static bool isOccluded(const glm::vec3 &origin, const glm::vec3 &direction, floa
     // Loop over all non-culled triangles and check for intersections with the ray
     for (const ModelTriangle &triangle : nonCulledTriangles)
     {
+        if (worldGlassEnabled && triangle.isRefractive)
+            continue;
+
         // Calculate the distance to the intersection point if the ray intersects with the triangle
         float triangleDistance;
         // If the ray intersects with the triangle and the intersection point is closer than the maximum distance, return true (occluded)
@@ -132,7 +137,9 @@ static bool lightReachable(const glm::vec3 &origin, const glm::vec3 &target, con
 static float lightVisibility(const glm::vec3 &origin, const glm::vec3 &faceNormal)
 {
 
-    if (!softShadowsEnabled || lightMin == lightMax)
+    // DOF already traces multiple rays per pixel; a full shadow grid here
+    // multiplies that cost again, so use one shadow ray for responsive previews.
+    if (!softShadowsEnabled || depthOfFieldEnabled || lightMin == lightMax)
         return lightReachable(origin, lightPosition, faceNormal) ? 1.0f : 0.0f;
 
     int visible = 0;
@@ -177,19 +184,22 @@ void RayTracedRenderer::draw(DrawingWindow &window)
     static bool prevSwirlEnabled = swirlEnabled;
     static bool prevReflexLensEnabled = reflexLensEnabled;
     static bool prevSoftShadowsEnabled = softShadowsEnabled;
+    static bool prevWorldGlassEnabled = worldGlassEnabled;
+
+    bool changed = (prevShadingMode != shadingMode) ||
+                   (prevSphereShowing != isSphereShowing) ||
+                   (prevBlueBoxShowing != isBlueBoxShowing) ||
+                   (prevRedBoxShowing != isRedBoxShowing) ||
+                   (prevWorldMirroringEnabled != worldMirroringEnabled) ||
+                   (prevDepthOfFieldEnabled != depthOfFieldEnabled) ||
+                   (prevFocalDistance != focalDistance) ||
+                   (prevSwirlEnabled != swirlEnabled) ||
+                   (prevReflexLensEnabled != reflexLensEnabled) ||
+                   (prevSoftShadowsEnabled != softShadowsEnabled) ||
+                   (prevWorldGlassEnabled != worldGlassEnabled);
 
     // Check for change
-    if (forceRayTraceRedraw || prevShadingMode != shadingMode ||
-        prevSphereShowing != isSphereShowing ||
-        prevBlueBoxShowing != isBlueBoxShowing ||
-        prevRedBoxShowing != isRedBoxShowing ||
-        prevWorldMirroringEnabled != worldMirroringEnabled ||
-        prevDepthOfFieldEnabled != depthOfFieldEnabled ||
-        prevFocalDistance != focalDistance ||
-        prevSwirlEnabled != swirlEnabled ||
-        prevReflexLensEnabled != reflexLensEnabled ||
-        prevSoftShadowsEnabled != softShadowsEnabled)
-
+    if (forceRayTraceRedraw || changed)
     {
         frameRendered = false;       // Force re-render if anything visible changed
         forceRayTraceRedraw = false; // Reset the force redraw flag
@@ -203,6 +213,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
         prevSwirlEnabled = swirlEnabled;
         prevReflexLensEnabled = reflexLensEnabled;
         prevSoftShadowsEnabled = softShadowsEnabled;
+        prevWorldGlassEnabled = worldGlassEnabled;
     }
 
     // Check if the camera has moved or rotated since the last frame
@@ -245,18 +256,11 @@ void RayTracedRenderer::draw(DrawingWindow &window)
             if (depthOfFieldEnabled)
             {
                 // Call depthOfFieldShading with the pixel coordinates (u, v) to get the pixel colour
-                pixelColour = depthOfFieldShading(u, v);
+                pixelColour = depthOfFieldShading(u, v, rayDirection);
             }
             else
             {
-                // Set the view origin to the camera position for standard shading
-                viewOrigin = cameraPosition;
-
-                // Get the closest valid intersection for the ray and calculate the pixel colour using shadingHelper
-                RayTriangleIntersection intersection = getClosestValidIntersection(cameraPosition, rayDirection);
-
-                // Use shadingHelper to determine the pixel colour based on the intersection
-                pixelColour = shadingHelper(intersection);
+                pixelColour = traceRay(cameraPosition, rayDirection, 0);
             }
 
             // Convert the Colour object to a 32-bit integer in ARGB format for rendering
@@ -557,15 +561,10 @@ RayTriangleIntersection RayTracedRenderer::mirrorShading(RayTriangleIntersection
 // Given by Intellisense the moment i started typing
 glm::vec2 RayTracedRenderer::randomPointInCircle(float radius)
 {
-    // Random number generation
-    thread_local std::random_device rd;
-    thread_local std::mt19937 gen(rd());
-    thread_local std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+    float random = radius * std::sqrt(randomFloat()); // Square root for uniform distribution in circle
+    float theta = 2.0f * PI * randomFloat();          // Random angle
 
-    float r = radius * std::sqrt(dist(gen)); // Square root for uniform distribution in circle
-    float theta = 2.0f * PI * dist(gen);     // Random angle
-
-    return glm::vec2(r * std::cos(theta), r * std::sin(theta));
+    return glm::vec2(random * std::cos(theta), random * std::sin(theta));
 }
 
 // Random point in a circle for swirl effect
@@ -625,15 +624,12 @@ glm::vec2 RayTracedRenderer::randomPointInReflexLens(float outerRadius, float in
     return unitPoint * (mappedRadius / std::sqrt(radiusSquared));
 }
 
-Colour RayTracedRenderer::depthOfFieldShading(float u, float v)
+Colour RayTracedRenderer::depthOfFieldShading(float u, float v, const glm::vec3 &rayDirection)
 {
     // Assign the camera orientation vectors for easier access
     glm::vec3 right = cameraOrientation[0];
     glm::vec3 up = cameraOrientation[1];
     glm::vec3 forward = -cameraOrientation[2];
-
-    // Calculate the ray direction from the camera through the pixel (u, v) and normalize it
-    glm::vec3 rayDirection = glm::normalize(cameraOrientation * glm::vec3(u, v, -1.0f));
 
     // Calculate the focal point based on the focal distance and the ray direction
     glm::vec3 focalPoint = cameraPosition + rayDirection * (focalDistance / glm::dot(rayDirection, forward));
@@ -658,14 +654,7 @@ Colour RayTracedRenderer::depthOfFieldShading(float u, float v)
         glm::vec3 origin = cameraPosition + right * randomOffset.x + up * randomOffset.y;
         glm::vec3 direction = glm::normalize(focalPoint - origin);
 
-        // Set the view origin for shading calculations to the new camera position
-        viewOrigin = origin;
-
-        // Get the closest valid intersection for the ray and calculate the pixel colour using shadingHelper
-        RayTriangleIntersection hit = getClosestValidIntersection(origin, direction);
-
-        // Calculate the pixel colour based on the intersection using shadingHelper
-        Colour pixelColour = shadingHelper(hit);
+        Colour pixelColour = traceRay(origin, direction, 0);
 
         // Add the pixel colour to the total for averaging later
         redTotal += pixelColour.red;
@@ -700,4 +689,157 @@ void RayTracedRenderer::focusOnPixel(int x, int y)
         std::cout << "Focused on " << hit.intersectedTriangle.objectName
                   << " (focalDistance = " << focalDistance << ")" << std::endl;
     }
+}
+
+// Check if a ray can refract through a surface based on the incident direction, surface normal, and index of refraction
+static bool refractRay(const glm::vec3 &incident, const glm::vec3 &normal, float indexofRefraction, glm::vec3 &outRefractedRay)
+{
+    // Calculate the cosine of the incident angle using the dot product
+    float cosIncident = glm::dot(-incident, normal);
+
+    // Calculate the total internal reflection using Snell's law
+    float totalInternalReflection = 1.0f - indexofRefraction * indexofRefraction * (1.0f - cosIncident * cosIncident);
+    // If total internal reflection occurs, return false
+    if (totalInternalReflection < 0.0f)
+    {
+        return false; // Total internal reflection occurs
+    }
+
+    // Calculate the refracted ray direction using Snell's law and normalize it
+    // We pass by reference to outRefractedRay to store the result
+    outRefractedRay = glm::normalize(indexofRefraction * incident + (indexofRefraction * cosIncident - std::sqrt(totalInternalReflection)) * normal);
+    return true;
+}
+
+// Calculate the Fresnel-Schlick approximation for reflectance based on the incident angle and indices of refraction
+static float fresnelSchlick(float cosTheta, float n1, float n2)
+{
+    // Calculate the reflectance at normal incidence (R0) using the indices of refraction
+    float r0 = (n1 - n2) / (n1 + n2);
+    // Square R0 to get the reflectance at normal incidence
+    r0 *= r0;
+    // Use the Fresnel-Schlick approximation to calculate the reflectance based on the incident angle (cosTheta)
+    return r0 + (1.0f - r0) * std::pow(1.0f - cosTheta, 5.0f);
+}
+
+// Attenuate the colour based on the absorption coefficients and distance traveled through the medium
+static Colour attenuateColour(const Colour &colour, const glm::vec3 &absorption, float distance)
+{
+    // Calculate the transmission for each color channel using the Beer-Lambert law
+    glm::vec3 transmission(
+        std::exp(-absorption.x * distance),
+        std::exp(-absorption.y * distance),
+        std::exp(-absorption.z * distance));
+
+    // Return the attenuated colour by multiplying the original colour by the transmission and clamping the values to a maximum of 255
+    return Colour(
+        std::min(static_cast<int>(colour.red * transmission.r), 255),
+        std::min(static_cast<int>(colour.green * transmission.g), 255),
+        std::min(static_cast<int>(colour.blue * transmission.b), 255));
+}
+
+// Trace a ray through the scene, handling reflections, refractions, and shading based on the intersection with triangles
+Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool insideMedium)
+{
+    if (depth > MAX_REFRACTION_RECURSION_DEPTH)
+        return Colour(0, 0, 0);
+
+    // Get the closest valid intersection for the ray
+    RayTriangleIntersection intersection = getClosestValidIntersection(origin, direction);
+
+    // If no intersection is found, return black
+    if (intersection.distanceFromCamera <= 0)
+        return Colour(0, 0, 0);
+
+    // Get the intersected triangle for further processing
+    const ModelTriangle &triangle = intersection.intersectedTriangle;
+
+    // Calculate the distance traveled through the medium based on whether the ray is inside the medium or not
+    float distanceThroughMedium = insideMedium ? intersection.distanceFromCamera : 0.0f;
+
+    // Handle different cases based on the properties of the intersected triangle
+    // If the triangle is a light source, attenuate the colour based on the medium absorption and distance traveled
+    if (triangle.objectName == "light")
+    {
+        return attenuateColour(triangle.colour, mediumAbsorption, distanceThroughMedium);
+    }
+
+    // If the triangle is a mirror and world mirroring is enabled, calculate the reflected ray and trace it recursively
+    if (triangle.isMirror && worldMirroringEnabled)
+    {
+        // Calculate the reflected direction using the given reflection formula
+        glm::vec3 reflectedDirection = glm::normalize(direction - 2.0f * glm::dot(direction, triangle.normal) * triangle.normal);
+        // Trace the reflected ray recursively, offsetting the starting point slightly to avoid self-intersection
+        Colour reflectedColour = traceRay(
+            intersection.intersectionPoint + reflectedDirection * 0.001f,
+            reflectedDirection,
+            depth + 1,
+            mediumAbsorption,
+            insideMedium);
+        return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium);
+    }
+
+    // If the triangle is refractive and world glass is enabled, handle refraction and reflection using Fresnel-Schlick approximation
+    if (triangle.isRefractive && worldGlassEnabled)
+    {
+        // Calculate the normal, indices of refraction, and determine if the ray is entering or exiting the medium
+        glm::vec3 normal = triangle.normal;
+        float n1 = 1.0f;
+        float n2 = triangle.refractiveIndex;
+
+        bool entering = glm::dot(direction, normal) < 0.0f;
+        if (!entering)
+        {
+            // If the ray is exiting the medium, invert the normal and swap the indices of refraction
+            normal = -normal;
+            // Swap the indices of refraction for exiting the medium
+            std::swap(n1, n2);
+        }
+
+        // Set the hit point of the intersection
+        glm::vec3 hitPoint = intersection.intersectionPoint;
+
+        // Calculate the reflected direction using the given reflection formula
+        glm::vec3 reflectedDirection = glm::normalize(direction - 2.0f * glm::dot(direction, normal) * normal);
+        // Trace the reflected ray recursively, offsetting the starting point slightly to avoid self-intersection
+        Colour reflectedColour = traceRay(
+            hitPoint + reflectedDirection * 0.001f,
+            reflectedDirection,
+            depth + 1,
+            entering ? glm::vec3(0.0f) : mediumAbsorption,
+            !entering);
+
+        glm::vec3 refractedDirection;
+
+        // Calculate the index of refraction for the ray based on whether it is entering or exiting the medium
+        float indexOfRefraction = n1 / n2;
+
+        // Attempt to refract the ray using Snell's law; if refraction fails (total internal reflection), return the attenuated reflected colour
+        if (!refractRay(direction, normal, indexOfRefraction, refractedDirection))
+        {
+            return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium);
+        }
+
+        // Trace the refracted ray recursively, offsetting the starting point slightly to avoid self-intersection
+        Colour refractedColour = traceRay(
+            hitPoint + refractedDirection * 0.001f,
+            refractedDirection,
+            depth + 1,
+            entering ? triangle.absorption : glm::vec3(0.0f),
+            entering);
+
+        // Calculate the Fresnel-Schlick factor based on the angle of incidence and the indices of refraction
+        float cosTheta = (n1 <= n2) ? glm::dot(-direction, normal)
+                                    : -glm::dot(refractedDirection, normal);
+        float fresnelSchlickFactor = fresnelSchlick(glm::clamp(cosTheta, 0.0f, 1.0f), n1, n2);
+        float refractedFactor = 1.0f - fresnelSchlickFactor;
+
+        Colour colour(
+            std::min(static_cast<int>(fresnelSchlickFactor * reflectedColour.red + refractedFactor * refractedColour.red), 255),
+            std::min(static_cast<int>(fresnelSchlickFactor * reflectedColour.green + refractedFactor * refractedColour.green), 255),
+            std::min(static_cast<int>(fresnelSchlickFactor * reflectedColour.blue + refractedFactor * refractedColour.blue), 255));
+        return attenuateColour(colour, mediumAbsorption, distanceThroughMedium);
+    }
+    viewOrigin = origin;
+    return attenuateColour(shadingHelper(intersection), mediumAbsorption, distanceThroughMedium);
 }

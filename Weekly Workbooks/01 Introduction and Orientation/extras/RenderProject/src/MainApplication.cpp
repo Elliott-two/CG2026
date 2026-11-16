@@ -46,10 +46,12 @@ bool reflexLensEnabled = false;
 
 // Flag to enable/disable world mirroring
 bool worldMirroringEnabled = true;
+bool worldGlassEnabled = true;
 
 // Flag to enable/disable soft shadows
 bool softShadowsEnabled = true;
 
+// Light position and min/max values for light calculations
 glm::vec3 lightMin(0.0f);
 glm::vec3 lightMax(0.0f);
 
@@ -91,7 +93,7 @@ std::string objFilenameSphere = "/Assets/sphere";
 float focalLength = 2.0f;
 float focalDistance = 4.0f;
 float lenseSize = 0.13f;
-int raysPerPixel = 24;
+int raysPerPixel = 4;
 
 glm::vec3 cameraPosition(0.0, 0.0, 4.0);
 glm::mat3 cameraOrientation = glm::mat3(1.0f);
@@ -108,6 +110,21 @@ std::vector<std::array<glm::vec3, 3>> vertexNormalsByTriangle;
 // Colour storage
 std::vector<Colour> palette;
 std::unordered_map<std::string, Colour> paletteMap;
+
+// Store the properties of each material type in a struct for easy access
+struct MaterialProperties
+{
+	bool isMirror;
+	bool isRefractive;
+	float refractiveIndex;
+	glm::vec3 absorption;
+};
+
+// Define a map to associate material names with their properties
+const std::unordered_map<std::string, MaterialProperties> materialProperties = {
+	{"Mirror", {true, false, 1.0f, glm::vec3(0.0f)}},
+	{"Glass", {false, true, 1.5f, glm::vec3(0.35f, 0.10f, 0.25f)}},
+	{"Water", {false, true, 1.333f, glm::vec3(0.002f, 0.002f, 0.002f)}}};
 
 void loadTexture(const std::string &materialName, const std::string &path)
 {
@@ -364,7 +381,17 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 		}
 		break;
 	case SDLK_g:
-		print("Placeholder: toggle glassy materials");
+		print("Toggling glassy materials");
+		if (worldGlassEnabled)
+		{
+			print("Disabling glassy materials");
+			worldGlassEnabled = false;
+		}
+		else
+		{
+			print("Enabling glassy materials");
+			worldGlassEnabled = true;
+		}
 		break;
 	case SDLK_m:
 		print("Placeholder: toggle metallic surfaces");
@@ -516,7 +543,7 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 	// Keep track of the current material name for the triangles
 	std::string currentMaterialName;
 
-	bool isCurrentMirror = false; // Flag to indicate if the current material is a mirror
+	MaterialProperties currentMaterialProperties = {false, false, 1.0f, glm::vec3(0.0f)};
 
 	// While getting lines
 	while (std::getline(file, line))
@@ -573,17 +600,18 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 				// Convert the texture index to an integer and adjust for 0-based indexing, if it exists; otherwise, set to -1
 				texIdx[i] = (parts.size() > 1 && !parts[1].empty()) ? std::stoi(parts[1]) - 1 : -1;
 			}
-			if (colour.name == "Mirror")
-			{
-				isCurrentMirror = true;
-			}
-			else
-			{
-				isCurrentMirror = false;
-			}
 			ModelTriangle triangle(vertices[idx[0]], vertices[idx[1]], vertices[idx[2]], colour);
 
-			triangle.isMirror = isCurrentMirror; // Set the isMirror flag for the triangle
+			// Set the material properties for the triangle based on the current material
+			triangle.isMirror = currentMaterialProperties.isMirror;
+			triangle.isRefractive = currentMaterialProperties.isRefractive;
+			triangle.absorption = currentMaterialProperties.absorption;
+
+			// Only set the refractive index if the triangle is refractive
+			if (triangle.isRefractive)
+			{
+				triangle.refractiveIndex = currentMaterialProperties.refractiveIndex;
+			}
 			// If there is a texture
 			if (currentTextureIndex >= 0)
 			{
@@ -620,6 +648,13 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 		}
 		else if (prefix == "usemtl" && tokens.size() >= 2)
 		{
+			// Look up the material properties for the current material name
+			auto material = materialProperties.find(tokens[1]);
+			// If the material name exists in the map, set currentMaterialProperties to the corresponding properties; otherwise, set it to default values
+			currentMaterialProperties = material != materialProperties.end()
+											? material->second
+											: MaterialProperties{false, false, 1.0f, glm::vec3(0.0f)};
+
 			// Check if the material name exists in the textureIndexByMaterial map
 			auto tex = textureIndexByMaterial.find(tokens[1]);
 			// If it exists, set currentTextureIndex to the corresponding index; otherwise, set it to -1
@@ -631,6 +666,10 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 			if (it != paletteMap.end())
 			{
 				colour = it->second;
+			}
+			else
+			{
+				colour = Colour(255, 255, 255); // don't inherit the previous material
 			}
 		}
 	}

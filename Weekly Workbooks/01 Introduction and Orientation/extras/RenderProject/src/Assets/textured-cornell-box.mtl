@@ -25,6 +25,12 @@ Kd 0.000000 1.000000 1.000000
 newmtl Mirror
 Kd 0.000000 0.000000 1.000000
 
+newmtl Glass
+Kd 0.900000 0.950000 1.000000
+
+newmtl Water
+Kd 0.800000 0.900000 1.000000
+
 newmtl Cobbles
 Kd 1.000000 1.000000 1.000000
 map_Kd texture.ppm
