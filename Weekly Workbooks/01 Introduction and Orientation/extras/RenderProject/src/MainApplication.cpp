@@ -15,14 +15,14 @@
 #include <unordered_map>
 
 // Define globals for WIDTH and HEIGHT of the window (can be accessed from any renderer)
-extern const int WIDTH = 700;
-extern const int HEIGHT = 700;
+extern const int WIDTH = 640;
+extern const int HEIGHT = 480;
 
 // Bool to check whether we want stroked triangle view
 extern bool WireframeBool;
 
 // Orbiting int and LookAt bool
-int isOrbiting = 0; // 0 = not orbiting, 1 = clockwise, -1 = counterclockwise
+float isOrbiting = 0; // 0 = not orbiting, 1 = clockwise, -1 = counterclockwise
 bool isLookAtEnabled = false;
 
 // Bool to check if we need to redraw
@@ -33,9 +33,9 @@ bool GouraudShadingEnabled = false;
 bool PhongShadingEnabled = false;
 
 // Bool to check if the sphere and boxes are showing
-bool isSphereShowing = false;
-bool isBlueBoxShowing = false;
-bool isRedBoxShowing = false;
+bool isSphereShowing = true;
+bool isBlueBoxShowing = true;
+bool isRedBoxShowing = true;
 
 // Flag to enable/disable depth of field effect
 bool depthOfFieldEnabled = false;
@@ -95,11 +95,14 @@ std::string objFilenameSphere = "/Assets/sphere";
 float focalLength = 2.0f;
 float focalDistance = 4.0f;
 float lenseSize = 0.13f;
-int raysPerPixel = 4;
+int raysPerPixel = 1;
 
-glm::vec3 cameraPosition(0.0, 0.0, 4.0);
+glm::vec3 cameraPosition(0.0, 0.0, 6.0);
 glm::mat3 cameraOrientation = glm::mat3(1.0f);
 glm::vec3 lightPosition(0.0, 0.8, 0.0);
+
+bool isAnimating = false;
+int animationTick = 0;
 
 // PI so i dont have to call a library
 const double PI = 3.14159265358979323846;
@@ -159,9 +162,9 @@ void lookAt(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, const glm::
 }
 
 // Rotation functions
-void rotateX(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, int degrees)
+void rotateX(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, float degrees)
 {
-	double degreeInRadians = degrees * (PI / 180.0);
+	double degreeInRadians = double(degrees) * (PI / 180.0);
 	double cos_value = std::cos(degreeInRadians);
 	double sin_value = std::sin(degreeInRadians);
 
@@ -177,11 +180,11 @@ void rotateX(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, int degree
 }
 
 // Same as above but for Y
-void rotateY(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, int degrees)
+void rotateY(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, float degrees)
 {
-	double degreeInRadians = degrees * (PI / 180.0);
-	double cos_value = std::cos(degreeInRadians);
-	double sin_value = std::sin(degreeInRadians);
+	float degreeInRadians = degrees * (PI / 180.0);
+	float cos_value = std::cos(degreeInRadians);
+	float sin_value = std::sin(degreeInRadians);
 
 	// Given formula
 	glm::mat3 rotationMatrix = glm::mat3(
@@ -193,7 +196,7 @@ void rotateY(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, int degree
 	cameraPosition = rotationMatrix * cameraPosition;
 }
 
-void panCamera(glm::mat3 &cameraOrientation, int degrees)
+void panCamera(glm::mat3 &cameraOrientation, float degrees)
 {
 	float radians = degrees * (PI / 180.0);
 	float cosine = std::cos(radians);
@@ -403,7 +406,8 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 		print("Placeholder: toggle environment maps");
 		break;
 	case SDLK_RETURN:
-		print("Placeholder: toggle fullscreen");
+		print("Toggling fullscreen");
+		window.toggleFullscreen();
 		break;
 	case SDLK_c:
 		print("Toggle Sphere visibility");
@@ -513,9 +517,103 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 			softShadowsEnabled = true;
 		}
 		break;
+	case SDLK_BACKSPACE:
+		print("Starting Animation");
+		isAnimating = true;
+		animationTick = 0;
+		// Optional: Reset camera to starting position
+		cameraPosition = glm::vec3(0.0f, 0.0f, 6.0f);
+		cameraOrientation = glm::mat3(1.0f);
+		break;
 	default:
 		break;
 	}
+}
+
+void updateAnimation()
+{
+	if (!isAnimating)
+		return;
+
+	// Phase 1: Orbit and switch to Phong shading for 60 ticks (frames)
+	if (animationTick == 0)
+	{
+		currentRenderer = &pointCloudRenderer;
+		WireframeBool = true;
+		// window.toggleFullscreen();
+		cameraPosition = glm::vec3(0.0f, 0.0f, 18.0f);
+		cameraOrientation = glm::mat3(1.0f);
+	}
+	if (animationTick >= 0 && animationTick < 120)
+	{
+		cameraPosition.z -= 0.1;
+	}
+	if (animationTick >= 120 && animationTick < 150)
+	{
+		cameraPosition.z += 0.1;
+	}
+	if (animationTick >= 150 && animationTick < 180)
+	{
+		cameraPosition.z -= 0.1;
+	}
+	if (animationTick >= 180 && animationTick < 185)
+	{
+		WireframeBool = false;
+	}
+	if (animationTick >= 215 && animationTick < 220)
+	{
+		cameraPosition = glm::vec3(0.0f, 0.0f, 6.0f);
+		isOrbiting = 0.5f;		// Start orbiting clockwise
+		isLookAtEnabled = true; // Enable LookAt
+	}
+	if (animationTick >= 950 && animationTick < 1160)
+	{
+		isOrbiting = 0;
+		cameraPosition = glm::vec3(0.0f, 0.0f, 6.0f);
+	}
+	if (animationTick >= 1160 && animationTick < 1260)
+	{
+		// currentRenderer = &rayTracedRenderer;
+		isLookAtEnabled = false; // Disable LookAt
+		panCamera(cameraOrientation, 0.07f);
+	}
+	if (animationTick >= 1360 && animationTick < 1460)
+	{
+		// currentRenderer = &rayTracedRenderer;
+		panCamera(cameraOrientation, -0.07f);
+	}
+	if (animationTick >= 1500 && animationTick < 1560)
+	{
+		// currentRenderer = &rayTracedRenderer;
+		GouraudShadingEnabled = true;
+		cameraPosition.z -= 0.01;
+	}
+	if (animationTick >= 1560 && animationTick < 1620)
+	{
+		// currentRenderer = &rayTracedRenderer;
+		PhongShadingEnabled = true;
+		GouraudShadingEnabled = false;
+	}
+	if (animationTick >= 1620 && animationTick < 1740)
+	{
+		// currentRenderer = &rayTracedRenderer;
+		PhongShadingEnabled = false;
+		GouraudShadingEnabled = false;
+		softShadowsEnabled = true;
+	}
+	if (animationTick >= 1740 && animationTick < 1800)
+	{
+		// currentRenderer = &rayTracedRenderer;
+		softShadowsEnabled = false;
+		panCamera(cameraOrientation, 0.07f);
+	}
+	if (animationTick >= 1800 && animationTick < 1820)
+	{
+		// currentRenderer = &rayTracedRenderer;
+		cameraPosition.z -= 0.1;
+	}
+
+	animationTick++;
 }
 
 std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float scalingFactor,
@@ -804,7 +902,7 @@ int main(int argc, char *argv[])
 	for (size_t i = 0; i < filennames.size(); ++i)
 	{
 		const glm::vec3 translation = (i == 1)
-										  ? glm::vec3(0.58f, 0.055f, -0.98f)
+										  ? glm::vec3(0.58f, 0.055f, -0.96f)
 										  : glm::vec3(0.0f);
 		std::vector<ModelTriangle> parsedTriangles = triangleParseOBJ(filennames[i] + ".obj", 0.35f, translation);
 		triangles.insert(triangles.end(), parsedTriangles.begin(), parsedTriangles.end());
@@ -864,6 +962,7 @@ int main(int argc, char *argv[])
 		// Need to ask the SDL window to render the frame, otherwise nothing actually gets shown on the screen !
 		window.renderFrame();
 
+		updateAnimation();
 		// Bool to check if the camera has changed since the last frame
 		bool cameraChanged = (tempCameraPosition != cameraPosition || tempCameraOrientation != cameraOrientation);
 		// If we are saving frames, a new frame has been rendered, and either the camera has changed or the current renderer is the ray traced renderer, then save the frame to a file

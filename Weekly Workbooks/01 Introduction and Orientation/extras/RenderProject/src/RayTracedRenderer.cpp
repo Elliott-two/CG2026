@@ -56,7 +56,7 @@ constexpr float AMBIENT = 0.25f;
 constexpr int SPECULAR_EXPONENT_LOG2 = 5;
 constexpr float REFLEX_RADIUS = 0.5f;
 constexpr float SWIRL_FACTOR = 4.0f;
-constexpr int SHADOW_GRID = 8;
+constexpr int SHADOW_GRID = 2;
 constexpr int MAX_REFRACTION_RECURSION_DEPTH = 6;
 
 // Thread-local storage for the view origin, which is used in depth of field calculations
