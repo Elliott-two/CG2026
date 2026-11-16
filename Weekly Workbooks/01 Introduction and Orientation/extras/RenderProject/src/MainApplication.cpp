@@ -91,10 +91,6 @@ bool newFrameRendered = false;
 std::string objFilename = "/Assets/textured-cornell-box";
 std::string objFilenameSphere = "/Assets/sphere";
 
-// Water normal map: kept separate from `textures` so it is never painted on as a colour.
-// Loaded in main() (not here) so a missing file prints a message instead of crashing before main starts.
-TextureMap waterNormalMap;
-const std::string waterNormalMapPath = "src/Assets/water_normal.ppm";
 // Core 3D rendering data structures (for when we eventually get around to working in 3D ;o)
 float focalLength = 2.0f;
 float focalDistance = 4.0f;
@@ -791,8 +787,6 @@ std::vector<Colour> colourParseOBJ(const std::string &filename)
 int main(int argc, char *argv[])
 {
 	loadTexture("Cobbles", "../../../05 Navigation and Transformation/models/texture (1).ppm");
-
-	waterNormalMap = TextureMap(waterNormalMapPath);
 
 	std::vector<std::string> filennames = {
 		"../../../05 Navigation and Transformation/models/textured-cornell-box",
