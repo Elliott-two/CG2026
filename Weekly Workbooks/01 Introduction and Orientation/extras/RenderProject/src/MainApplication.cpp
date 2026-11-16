@@ -87,9 +87,7 @@ bool savingFrames = false;
 int frameCounter = 0;
 bool newFrameRendered = false;
 
-// Filenames
-std::string objFilename = "/Assets/textured-cornell-box";
-std::string objFilenameSphere = "/Assets/sphere";
+TextureMap waterNormalMap = TextureMap("src/Assets/water_normal_map.ppm");
 
 // Core 3D rendering data structures (for when we eventually get around to working in 3D ;o)
 float focalLength = 2.0f;

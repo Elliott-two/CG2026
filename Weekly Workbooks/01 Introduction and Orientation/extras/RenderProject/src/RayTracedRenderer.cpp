@@ -53,7 +53,7 @@ constexpr float PI = 3.14159265358979323846f;
 constexpr float IMAGE_SCALE = 500.0f;
 constexpr float LIGHT_INTENSITY = 10.0f;
 constexpr float AMBIENT = 0.25f;
-constexpr float SPECULAR_EXPONENT_LOG2 = 5.0f;
+constexpr int SPECULAR_EXPONENT_LOG2 = 5;
 constexpr float REFLEX_RADIUS = 0.5f;
 constexpr float SWIRL_FACTOR = 4.0f;
 constexpr int SHADOW_GRID = 8;
@@ -137,7 +137,7 @@ static float lightFalloff(float distanceSquared)
 }
 
 // Calculating the light sample for a given point
-glm::vec2 sampleLight(const glm::vec3 &origin, const glm::vec3 &shadingNormal, const glm::vec3 &viewDir, const glm::vec3 &target)
+static glm::vec2 sampleLight(const glm::vec3 &origin, const glm::vec3 &shadingNormal, const glm::vec3 &viewDir, const glm::vec3 &target)
 {
     // Create empty vector
     glm::vec2 result(0.0f);
@@ -156,15 +156,15 @@ glm::vec2 sampleLight(const glm::vec3 &origin, const glm::vec3 &shadingNormal, c
 
     glm::vec3 lightDir = toLight / distance;
 
+    // Check if in full shadow
+    if (isOccluded(origin, lightDir, distance - 0.003f))
+        return result;
+
     // Calculate the incident angle between the shading normal and the light direction
     float incidentAngle = glm::dot(shadingNormal, lightDir);
 
     // If the incident angle is less than 0, return the result with diffuse and specular set to 0 (no light contribution)
     if (incidentAngle <= 0.0f)
-        return result;
-
-    // Check if in full shadow
-    if (isOccluded(origin, lightDir, distance - 0.003f))
         return result;
 
     // Calculate using MATHS?!?!
@@ -379,9 +379,9 @@ static glm::vec3 jitteredLightPoint(int i, int j)
                      glm::mix(lightMin.z, lightMax.z, alongZ));
 }
 
-glm::vec2 sampleAreaLight(const glm::vec3 &origin, const glm::vec3 &normal, const glm::vec3 &viewDir)
+static glm::vec2 sampleAreaLight(const glm::vec3 &origin, const glm::vec3 &normal, const glm::vec3 &viewDir)
 {
-    glm::vec2 total;
+    glm::vec2 total(0.0f);
     for (int i = 0; i < SHADOW_GRID; ++i)
         for (int j = 0; j < SHADOW_GRID; ++j)
             total += sampleLight(origin, normal, viewDir, jitteredLightPoint(i, j));
@@ -690,7 +690,7 @@ static float fresnelSchlick(float cosTheta, float n1, float n2)
     return r0 + (1.0f - r0) * std::pow(1.0f - cosTheta, 5.0f);
 }
 
-glm::vec3 computeBeerLambertTransmission(const glm::vec3 &absorption, float distance)
+static glm::vec3 computeBeerLambertTransmission(const glm::vec3 &absorption, float distance)
 {
 
     // Calculate the transmission for each color channel using the Beer-Lambert law
@@ -764,8 +764,9 @@ Colour RayTracedRenderer::mirrorredRay(const RayTriangleIntersection &intersecti
     return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium, mediumScatter);
 }
 
-Colour RayTracedRenderer::refractedRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool entering, const Colour &mediumScatter, float distanceThroughMedium, const ModelTriangle &triangle)
+Colour RayTracedRenderer::refractedRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool entering, const Colour &mediumScatter, float distanceThroughMedium)
 {
+    const ModelTriangle &triangle = intersection.intersectedTriangle;
     glm::vec3 hitPoint = intersection.intersectionPoint;
 
     glm::vec3 surfaceNormal = triangle.isWater ? waterNormal(hitPoint, triangle.normal) : triangle.normal;
@@ -842,11 +843,9 @@ Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &dir
     // Calculate the distance traveled through the medium based on whether the ray is inside the medium or not
     float distanceThroughMedium = insideMedium ? intersection.distanceFromCamera : 0.0f;
 
-    const float pathInMedium = insideMedium ? intersection.distanceFromCamera : 0.0f;
-
     auto throughMedium = [&](const Colour &colour, const Colour &scatter)
     {
-        return attenuateColour(colour, mediumAbsorption, pathInMedium, scatter);
+        return attenuateColour(colour, mediumAbsorption, distanceThroughMedium, scatter);
     };
 
     // Handle different cases based on the properties of the intersected triangle
@@ -866,7 +865,7 @@ Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &dir
     // If the triangle is refractive and world glass is enabled, handle refraction and reflection using Fresnel-Schlick approximation
     if (triangle.isRefractive && worldRefractiveEnabled)
     {
-        return refractedRay(intersection, direction, depth, mediumAbsorption, entering, mediumScatter, distanceThroughMedium, triangle);
+        return refractedRay(intersection, direction, depth, mediumAbsorption, entering, mediumScatter, distanceThroughMedium);
     }
     viewOrigin = origin;
     return throughMedium(shadingHelper(intersection), Colour(0, 0, 0));
