@@ -605,7 +605,7 @@ void updateAnimation()
 	{
 		// currentRenderer = &rayTracedRenderer;
 		softShadowsEnabled = false;
-		panCamera(cameraOrientation, 0.07f);
+		panCamera(cameraOrientation, 0.08f);
 	}
 	if (animationTick >= 1800 && animationTick < 1820)
 	{
