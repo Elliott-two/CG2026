@@ -33,9 +33,9 @@ bool GouraudShadingEnabled = false;
 bool PhongShadingEnabled = false;
 
 // Bool to check if the sphere and boxes are showing
-bool isSphereShowing = true;
-bool isBlueBoxShowing = true;
-bool isRedBoxShowing = true;
+bool isSphereShowing = false;
+bool isBlueBoxShowing = false;
+bool isRedBoxShowing = false;
 
 // Flag to enable/disable depth of field effect
 bool depthOfFieldEnabled = false;
@@ -45,11 +45,13 @@ bool swirlEnabled = false;
 bool reflexLensEnabled = false;
 
 // Flag to enable/disable world mirroring
-bool worldMirroringEnabled = true;
-bool worldGlassEnabled = true;
+bool worldMirroringEnabled = false;
+bool worldRefractiveEnabled = false;
+
+float waterTime = 0.0f;
 
 // Flag to enable/disable soft shadows
-bool softShadowsEnabled = true;
+bool softShadowsEnabled = false;
 
 // Light position and min/max values for light calculations
 glm::vec3 lightMin(0.0f);
@@ -115,6 +117,7 @@ std::unordered_map<std::string, Colour> paletteMap;
 struct MaterialProperties
 {
 	bool isMirror;
+	bool isWater;
 	bool isRefractive;
 	float refractiveIndex;
 	glm::vec3 absorption;
@@ -124,7 +127,7 @@ struct MaterialProperties
 const std::unordered_map<std::string, MaterialProperties> materialProperties = {
 	{"Mirror", {true, false, 1.0f, glm::vec3(0.0f)}},
 	{"Glass", {false, true, 1.5f, glm::vec3(0.35f, 0.10f, 0.25f)}},
-	{"Water", {false, true, 1.333f, glm::vec3(0.002f, 0.002f, 0.002f)}}};
+	{"Water", {false, true, 1.333f, glm::vec3(0.9f, 0.9f, 0.9f)}}};
 
 void loadTexture(const std::string &materialName, const std::string &path)
 {
@@ -382,15 +385,15 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 		break;
 	case SDLK_g:
 		print("Toggling glassy materials");
-		if (worldGlassEnabled)
+		if (worldRefractiveEnabled)
 		{
 			print("Disabling glassy materials");
-			worldGlassEnabled = false;
+			worldRefractiveEnabled = false;
 		}
 		else
 		{
 			print("Enabling glassy materials");
-			worldGlassEnabled = true;
+			worldRefractiveEnabled = true;
 		}
 		break;
 	case SDLK_m:
@@ -515,7 +518,8 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 	}
 }
 
-std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float scalingFactor)
+std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float scalingFactor,
+											const glm::vec3 &translation = glm::vec3(0.0f))
 {
 
 	// Vector of Triangles
@@ -571,9 +575,10 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 		{
 			// Push back and scaling
 			vertices.push_back(glm::vec3(
-				std::stof(tokens[1]) * scalingFactor,
-				std::stof(tokens[2]) * scalingFactor,
-				std::stof(tokens[3]) * scalingFactor));
+								   std::stof(tokens[1]) * scalingFactor,
+								   std::stof(tokens[2]) * scalingFactor,
+								   std::stof(tokens[3]) * scalingFactor) +
+							   translation);
 		}
 		else if (prefix == "vt" && tokens.size() >= 3)
 		{
@@ -604,6 +609,7 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 
 			// Set the material properties for the triangle based on the current material
 			triangle.isMirror = currentMaterialProperties.isMirror;
+			triangle.isWater = currentMaterialProperties.isWater;
 			triangle.isRefractive = currentMaterialProperties.isRefractive;
 			triangle.absorption = currentMaterialProperties.absorption;
 
@@ -679,7 +685,9 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 
 std::array<glm::vec3, 3> vertexNormals(const ModelTriangle &triangle)
 {
-	float smoothThreshold = std::cos(glm::radians(45.0f)); // include all faces sharing the vertex
+	float smoothThreshold = triangle.objectName == "sphere"
+								? -1.0f
+								: std::cos(glm::radians(45.0f));
 	std::array<glm::vec3, 3> normals;
 
 	for (int i = 0; i < 3; ++i)
@@ -793,9 +801,12 @@ int main(int argc, char *argv[])
 	}
 
 	// Parse the triangles
-	for (const std::string &filename : filennames)
+	for (size_t i = 0; i < filennames.size(); ++i)
 	{
-		std::vector<ModelTriangle> parsedTriangles = triangleParseOBJ(filename + ".obj", 0.35f);
+		const glm::vec3 translation = (i == 1)
+										  ? glm::vec3(0.58f, 0.055f, -0.98f)
+										  : glm::vec3(0.0f);
+		std::vector<ModelTriangle> parsedTriangles = triangleParseOBJ(filennames[i] + ".obj", 0.35f, translation);
 		triangles.insert(triangles.end(), parsedTriangles.begin(), parsedTriangles.end());
 	}
 

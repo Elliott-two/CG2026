@@ -28,7 +28,9 @@ extern bool PhongShadingEnabled;
 
 // Flag to enable/disable world mirroring
 extern bool worldMirroringEnabled;
-extern bool worldGlassEnabled;
+extern bool worldRefractiveEnabled;
+
+extern float waterTime;
 
 // Flag to enable/disable depth of field effect
 extern bool depthOfFieldEnabled;
@@ -54,12 +56,42 @@ constexpr float AMBIENT = 0.25f;
 constexpr float SPECULAR_EXPONENT = 32.0f;
 constexpr float REFLEX_RADIUS = 0.5f;
 constexpr float SWIRL_FACTOR = 4.0f;
-constexpr int SHADOW_GRID = 4;
+constexpr int SHADOW_GRID = 8;
 constexpr int MAX_REFRACTION_RECURSION_DEPTH = 6;
+constexpr float WATER_REFRACTIVE_INDEX = 1.333f;
+constexpr float WATER_MIN_REFLECT = 0.25f;
 
 // Thread-local storage for the view origin, which is used in depth of field calculations
 static thread_local glm::vec3 viewOrigin(0.0f);
 static std::vector<int> visibleToOriginalIndex;
+
+// Random number generator that I found online
+static uint32_t hashPoint(const glm::vec3 &p)
+{
+    uint32_t bits[3];
+    std::memcpy(bits, &p.x, sizeof(bits));
+
+    uint32_t h = 2166136261u;
+    for (uint32_t b : bits)
+    {
+        h ^= b;
+        h *= 16777619u;
+    }
+    h ^= h >> 16;
+    h *= 0x85ebca6bu;
+    h ^= h >> 13;
+    h *= 0xc2b2ae35u;
+    h ^= h >> 16;
+    return h ? h : 1u;
+}
+// Random number generator that I found online
+static float nextRandom(uint32_t &state)
+{
+    state ^= state << 13;
+    state ^= state >> 17;
+    state ^= state << 5;
+    return (state & 0xFFFFFFu) / float(0x1000000);
+}
 
 // If I need a random float
 static float randomFloat()
@@ -109,7 +141,7 @@ static bool isOccluded(const glm::vec3 &origin, const glm::vec3 &direction, floa
     // Loop over all non-culled triangles and check for intersections with the ray
     for (const ModelTriangle &triangle : nonCulledTriangles)
     {
-        if (worldGlassEnabled && triangle.isRefractive)
+        if (worldRefractiveEnabled && triangle.isRefractive)
             continue;
 
         // Calculate the distance to the intersection point if the ray intersects with the triangle
@@ -120,44 +152,47 @@ static bool isOccluded(const glm::vec3 &origin, const glm::vec3 &direction, floa
     }
     return false;
 }
-static bool lightReachable(const glm::vec3 &origin, const glm::vec3 &target, const glm::vec3 &faceNormal)
+struct LightSample
 {
-    glm::vec3 toTarget = target - origin;
-    float distance = glm::length(toTarget);
-    glm::vec3 direction = toTarget / distance;
+    float diffuse = 0.0f;
+    float specular = 0.0f;
+};
 
-    // A sample behind the surface can't light it
-    if (glm::dot(faceNormal, direction) <= 0.0f)
-        return false;
-
-    // Stop the ray just short of the light. The sample sits exactly on the ceiling
-    // plane, so without this the ceiling triangles would count as blocking it.
-    return !isOccluded(origin, direction, distance - 0.002f);
-}
-static float lightVisibility(const glm::vec3 &origin, const glm::vec3 &faceNormal)
+// Calculating the light sample for a given point
+static LightSample sampleLight(const glm::vec3 &origin, const glm::vec3 &shadingNormal, const glm::vec3 &viewDir, const glm::vec3 &target)
 {
+    // Create empty LightSample struct to store the results
+    LightSample result;
 
-    // DOF already traces multiple rays per pixel; a full shadow grid here
-    // multiplies that cost again, so use one shadow ray for responsive previews.
-    if (!softShadowsEnabled || depthOfFieldEnabled || lightMin == lightMax)
-        return lightReachable(origin, lightPosition, faceNormal) ? 1.0f : 0.0f;
+    // Calculate the direction from the shading point to the light source
+    glm::vec3 toLight = target - origin;
 
-    int visible = 0;
-    for (int i = 0; i < SHADOW_GRID; ++i)
-    {
-        for (int j = 0; j < SHADOW_GRID; ++j)
-        {
-            float a = (i + randomFloat()) / SHADOW_GRID;
-            float b = (j + randomFloat()) / SHADOW_GRID;
-            glm::vec3 target(
-                lightMin.x + a * (lightMax.x - lightMin.x),
-                lightMin.y,
-                lightMin.z + b * (lightMax.z - lightMin.z));
-            if (lightReachable(origin, target, faceNormal))
-                visible++;
-        }
-    }
-    return float(visible) / (SHADOW_GRID * SHADOW_GRID);
+    // Calculate the distance to the light source and normalize the direction vector
+    float distance = glm::length(toLight);
+    glm::vec3 lightDir = toLight / distance;
+
+    // Calculate the incident angle between the shading normal and the light direction
+    float incidentAngle = glm::dot(shadingNormal, lightDir);
+
+    // If the incident angle is less than 0, return the result with diffuse and specular set to 0 (no light contribution)
+    if (incidentAngle <= 0.0f)
+        return result;
+
+    // Check if in full shadow
+    if (isOccluded(origin, lightDir, distance - 0.002f))
+        return result;
+
+    // Calculate using MATHS?!?!
+    float proximity = LIGHT_INTENSITY / (4.0f * PI * distance * distance);
+
+    // Calculate the diffuse and specular contributions based on the incident angle and proximity to the light source
+    result.diffuse = proximity * incidentAngle;
+
+    glm::vec3 reflected = (2.0f * incidentAngle * shadingNormal) - lightDir;
+
+    result.specular = 0.5f * std::pow(std::max(glm::dot(reflected, viewDir), 0.0f), SPECULAR_EXPONENT);
+
+    return result;
 }
 
 void RayTracedRenderer::draw(DrawingWindow &window)
@@ -184,7 +219,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
     static bool prevSwirlEnabled = swirlEnabled;
     static bool prevReflexLensEnabled = reflexLensEnabled;
     static bool prevSoftShadowsEnabled = softShadowsEnabled;
-    static bool prevWorldGlassEnabled = worldGlassEnabled;
+    static bool prevWorldRefractiveEnabled = worldRefractiveEnabled;
 
     bool changed = (prevShadingMode != shadingMode) ||
                    (prevSphereShowing != isSphereShowing) ||
@@ -196,7 +231,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
                    (prevSwirlEnabled != swirlEnabled) ||
                    (prevReflexLensEnabled != reflexLensEnabled) ||
                    (prevSoftShadowsEnabled != softShadowsEnabled) ||
-                   (prevWorldGlassEnabled != worldGlassEnabled);
+                   (prevWorldRefractiveEnabled != worldRefractiveEnabled);
 
     // Check for change
     if (forceRayTraceRedraw || changed)
@@ -213,7 +248,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
         prevSwirlEnabled = swirlEnabled;
         prevReflexLensEnabled = reflexLensEnabled;
         prevSoftShadowsEnabled = softShadowsEnabled;
-        prevWorldGlassEnabled = worldGlassEnabled;
+        prevWorldRefractiveEnabled = worldRefractiveEnabled;
     }
 
     // Check if the camera has moved or rotated since the last frame
@@ -360,67 +395,51 @@ RayTriangleIntersection RayTracedRenderer::getClosestValidIntersection(glm::vec3
     return result;
 }
 
-Colour RayTracedRenderer::calculateLighting(glm::vec3 point, glm::vec3 normal, Colour baseColour, glm::vec3 faceNormal)
+Colour RayTracedRenderer::calculateLighting(glm::vec3 point, glm::vec3 normal, Colour baseColour, glm::vec3 offsetNormal)
 {
-    // Normal used for shading
     glm::vec3 normalForShading = glm::normalize(normal);
 
-    // Offset to avoid shadow acne
-    // Checking same triangle didnt work for me
-    glm::vec3 origin = point + faceNormal * 0.005f;
+    // Offset to avoid shadow acne (only job of offsetNormal now)
+    glm::vec3 origin = point + offsetNormal * 0.005f;
 
-    // Calculate the direction to the light source and its distance
-    glm::vec3 toLight = lightPosition - origin;
+    glm::vec3 viewDir = glm::normalize(viewOrigin - point);
 
-    // Using glm::length to calculate the distance to the light source
-    // As given in lectures
-    float distanceToLight = glm::length(toLight);
+    LightSample total;
 
-    // Normalize the direction to the light source
-    glm::vec3 lightDir = toLight / distanceToLight;
-
-    float visibility = lightVisibility(origin, faceNormal);
-    float brightness = AMBIENT;
-    float specular = 0.0f;
-
-    if (visibility > 0.0f)
+    if (!softShadowsEnabled || lightMin == lightMax)
     {
-        // Calculate the angle of incidence using the dot product
-        float incidentAngle = glm::dot(normalForShading, lightDir);
+        // Hard shadows: single sample at the light centre
+        total = sampleLight(origin, normalForShading, viewDir, lightPosition);
+    }
+    else
+    {
+        // Same point always gets the same jitter (see fix 3)
+        uint32_t rngState = hashPoint(point);
 
-        // Calculate using SCIENCE?!?! (Might change if it looks bad)
-        float proximity = LIGHT_INTENSITY / (4.0f * PI * distanceToLight * distanceToLight);
-
-        brightness += visibility * proximity * std::max(incidentAngle, 0.0f);
-
-        // If the incident angle is positive, calculate the specular reflection component
-        if (incidentAngle > 0.0f)
+        for (int i = 0; i < SHADOW_GRID; ++i)
         {
-            // Reflect the light direction about the normal
-            glm::vec3 reflected = (2.0f * glm::dot(lightDir, normalForShading) * normalForShading) - lightDir;
+            for (int j = 0; j < SHADOW_GRID; ++j)
+            {
+                float a = (i + nextRandom(rngState)) / SHADOW_GRID;
+                float b = (j + nextRandom(rngState)) / SHADOW_GRID;
+                glm::vec3 target(
+                    lightMin.x + a * (lightMax.x - lightMin.x),
+                    lightMin.y,
+                    lightMin.z + b * (lightMax.z - lightMin.z));
 
-            // Calculate the view direction from the point to the camera
-            glm::vec3 viewDir = glm::normalize(viewOrigin - point);
-
-            // Specular component from given formula
-            // Looks nicer like this
-            specular = visibility *
-                       0.5f *
-                       std::pow(
-                           std::max(
-                               glm::dot(
-                                   reflected,
-                                   viewDir),
-                               0.0f),
-                           SPECULAR_EXPONENT);
+                LightSample s = sampleLight(origin, normalForShading, viewDir, target);
+                total.diffuse += s.diffuse;
+                total.specular += s.specular;
+            }
         }
+
+        const float sampleCount = float(SHADOW_GRID * SHADOW_GRID);
+        total.diffuse /= sampleCount;
+        total.specular /= sampleCount;
     }
 
-    // Clamp the brightness to ensure it stays within the range [0, 1]
-    // Given by VSCode Intellisense
-    brightness = glm::clamp(brightness, 0.0f, 1.0f);
-
-    // Return the final colour by scaling the base colour by the calculated brightness
+    float brightness = glm::clamp(AMBIENT + total.diffuse, 0.0f, 1.0f);
+    float specular = total.specular;
 
     return Colour(
         std::min(255, int(std::round(baseColour.red * brightness + 255.0f * specular))),
@@ -441,7 +460,7 @@ std::array<Colour, 3> RayTracedRenderer::gourandShading(RayTriangleIntersection 
     // Light each vertex using its smooth normal (and the true face normal for shadows)
     std::array<Colour, 3> colours;
     for (int i = 0; i < 3; ++i)
-        colours[i] = calculateLighting(triangle.vertices[i], normals[i], triangle.colour, triangle.normal);
+        colours[i] = calculateLighting(triangle.vertices[i], normals[i], triangle.colour, normals[i]);
     return colours;
 }
 
@@ -780,7 +799,7 @@ Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &dir
     }
 
     // If the triangle is refractive and world glass is enabled, handle refraction and reflection using Fresnel-Schlick approximation
-    if (triangle.isRefractive && worldGlassEnabled)
+    if (triangle.isRefractive && worldRefractiveEnabled)
     {
         // Calculate the normal, indices of refraction, and determine if the ray is entering or exiting the medium
         glm::vec3 normal = triangle.normal;

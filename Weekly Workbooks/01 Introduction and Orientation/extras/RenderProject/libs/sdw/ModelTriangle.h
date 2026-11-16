@@ -20,6 +20,7 @@ struct ModelTriangle
 	bool isRefractive = false;	  // Flag to indicate if the triangle is refractive
 	float refractiveIndex = 1.0f; // Refractive index for the triangle, default is 1.0 (no refraction)
 	glm::vec3 absorption = glm::vec3(0.0f);
+	bool isWater = false; // Flag to indicate if the triangle is water
 
 	ModelTriangle();
 	ModelTriangle(const glm::vec3 &v0, const glm::vec3 &v1, const glm::vec3 &v2, Colour trigColour);
