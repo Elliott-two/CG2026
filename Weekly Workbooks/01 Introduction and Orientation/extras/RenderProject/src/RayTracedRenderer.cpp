@@ -31,7 +31,6 @@ extern bool worldMirroringEnabled;
 extern bool worldRefractiveEnabled;
 
 extern float waterTime;
-extern TextureMap waterNormalMap;
 
 // Flag to enable/disable depth of field effect
 extern bool depthOfFieldEnabled;
@@ -59,9 +58,6 @@ constexpr float REFLEX_RADIUS = 0.5f;
 constexpr float SWIRL_FACTOR = 4.0f;
 constexpr int SHADOW_GRID = 8;
 constexpr int MAX_REFRACTION_RECURSION_DEPTH = 6;
-constexpr float WATER_NORMAL_STRENGTH = 0.3f;
-constexpr float NORMALMAP_GREEN_SIGN = 1.0f;
-constexpr bool DEBUG_WATER_NORMALS = false;
 // Thread-local storage for the view origin, which is used in depth of field calculations
 static thread_local glm::vec3 viewOrigin(0.0f);
 static std::vector<int> visibleToOriginalIndex;
@@ -182,13 +178,9 @@ static glm::vec2 sampleLight(const glm::vec3 &origin, const glm::vec3 &shadingNo
     return result;
 }
 
-static glm::vec3 interpolatedNormal(const RayTriangleIntersection &intersection, const glm::vec3 &weights))
 {
-    const glm::vec3 flatNormal = intersection.intersectedTriangle.normal;
-    if (intersection.triangleIndex >= vertexNormalsByTriangle.size())
         return flatNormal;
 
-    const std::array<glm::vec3, 3> &normals = vertexNormalsByTriangle[intersection.triangleIndex];
     const glm::vec3 blended = weights.x * normals[0] + weights.y * normals[1] + weights.z * normals[2];
     return (glm::length(blended) > 1e-6f) ? glm::normalize(blended) : flatNormal;
 }
@@ -478,26 +470,8 @@ glm::vec3 RayTracedRenderer::barycentricWeights(const RayTriangleIntersection &i
 // Phong shading implementation
 Colour RayTracedRenderer::phongShading(const RayTriangleIntersection &intersection)
 {
-    // Get the needed fields for aesthetic calling
-    Colour colour = intersection.intersectedTriangle.colour;
-    glm::vec3 triangleNormal = intersection.intersectedTriangle.normal;
-
-    // Look up the precomputed vertex normals by triangle index (no silent zero insertion)
-    if (intersection.triangleIndex >= vertexNormalsByTriangle.size())
-    {
-        // Fall back to flat shading if something is out of sync
-        return calculateLighting(intersection.intersectionPoint, triangleNormal, colour);
-    }
-    const std::array<glm::vec3, 3> &normals = vertexNormalsByTriangle[intersection.triangleIndex];
-
-    glm::vec3 weights = barycentricWeights(intersection);
-
-    // Interpolate the normal, then renormalise (interpolated normals are shorter than 1)
-    glm::vec3 interpolated = weights.x * normals[0] + weights.y * normals[1] + weights.z * normals[2];
-    glm::vec3 normal = (glm::length(interpolated) > 1e-6f) ? glm::normalize(interpolated) : triangleNormal;
-
-    // Light the actual hit point with the interpolated normal
-    return calculateLighting(intersection.intersectionPoint, normal, colour);
+    const glm::vec3 normal = interpolatedNormal(intersection, barycentricWeights(intersection));
+    return calculateLighting(intersection.intersectionPoint, normal, intersection.intersectedTriangle.colour);
 }
 
 // Textured shading implementation based on my rasteriser, but with barycentric interpolation of the texture coordinates
