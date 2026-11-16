@@ -36,6 +36,12 @@ extern bool swirlEnabled;
 // Flag to enable/disable reflex lens effect
 extern bool reflexLensEnabled;
 
+extern bool softShadowsEnabled;
+extern glm::vec3 lightMin;
+extern glm::vec3 lightMax;
+
+constexpr int SHADOW_GRID = 4;
+
 // Bools to check if the sphere and boxes are showing, for video purposes
 extern bool isSphereShowing;
 extern bool isBlueBoxShowing;
@@ -53,6 +59,13 @@ constexpr float SWIRL_FACTOR = 4.0f;
 // Thread-local storage for the view origin, which is used in depth of field calculations
 static thread_local glm::vec3 viewOrigin(0.0f);
 static std::vector<int> visibleToOriginalIndex;
+
+static float randomFloat()
+{
+    thread_local std::mt19937 gen(std::random_device{}());
+    thread_local std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+    return dist(gen);
+}
 
 // Bool to check if a ray intersects with a triangle using the Möller–Trumbore intersection algorithm
 // Moller Trumbore algorithm came as a result of googling how to speed up ray tracing
@@ -102,6 +115,43 @@ static bool isOccluded(const glm::vec3 &origin, const glm::vec3 &direction, floa
     }
     return false;
 }
+static bool lightReachable(const glm::vec3 &origin, const glm::vec3 &target, const glm::vec3 &faceNormal)
+{
+    glm::vec3 toTarget = target - origin;
+    float distance = glm::length(toTarget);
+    glm::vec3 direction = toTarget / distance;
+
+    // A sample behind the surface can't light it
+    if (glm::dot(faceNormal, direction) <= 0.0f)
+        return false;
+
+    // Stop the ray just short of the light. The sample sits exactly on the ceiling
+    // plane, so without this the ceiling triangles would count as blocking it.
+    return !isOccluded(origin, direction, distance - 0.002f);
+}
+static float lightVisibility(const glm::vec3 &origin, const glm::vec3 &faceNormal)
+{
+
+    if (!softShadowsEnabled || lightMin == lightMax)
+        return lightReachable(origin, lightPosition, faceNormal) ? 1.0f : 0.0f;
+
+    int visible = 0;
+    for (int i = 0; i < SHADOW_GRID; ++i)
+    {
+        for (int j = 0; j < SHADOW_GRID; ++j)
+        {
+            float a = (i + randomFloat()) / SHADOW_GRID;
+            float b = (j + randomFloat()) / SHADOW_GRID;
+            glm::vec3 target(
+                lightMin.x + a * (lightMax.x - lightMin.x),
+                lightMin.y,
+                lightMin.z + b * (lightMax.z - lightMin.z));
+            if (lightReachable(origin, target, faceNormal))
+                visible++;
+        }
+    }
+    return float(visible) / (SHADOW_GRID * SHADOW_GRID);
+}
 
 void RayTracedRenderer::draw(DrawingWindow &window)
 {
@@ -126,6 +176,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
     static float prevFocalDistance = focalDistance;
     static bool prevSwirlEnabled = swirlEnabled;
     static bool prevReflexLensEnabled = reflexLensEnabled;
+    static bool prevSoftShadowsEnabled = softShadowsEnabled;
 
     // Check for change
     if (forceRayTraceRedraw || prevShadingMode != shadingMode ||
@@ -136,7 +187,8 @@ void RayTracedRenderer::draw(DrawingWindow &window)
         prevDepthOfFieldEnabled != depthOfFieldEnabled ||
         prevFocalDistance != focalDistance ||
         prevSwirlEnabled != swirlEnabled ||
-        prevReflexLensEnabled != reflexLensEnabled)
+        prevReflexLensEnabled != reflexLensEnabled ||
+        prevSoftShadowsEnabled != softShadowsEnabled)
 
     {
         frameRendered = false;       // Force re-render if anything visible changed
@@ -150,6 +202,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
         prevFocalDistance = focalDistance;
         prevSwirlEnabled = swirlEnabled;
         prevReflexLensEnabled = reflexLensEnabled;
+        prevSoftShadowsEnabled = softShadowsEnabled;
     }
 
     // Check if the camera has moved or rotated since the last frame
@@ -235,6 +288,11 @@ Colour RayTracedRenderer::shadingHelper(RayTriangleIntersection intersection)
             return Colour(0, 0, 0);
     }
 
+    if (shaded.intersectedTriangle.objectName == "light")
+    {
+        return shaded.intersectedTriangle.colour;
+    }
+
     if (shaded.intersectedTriangle.textureIndex >= 0)
         shaded.intersectedTriangle.colour = texturedShading(shaded);
 
@@ -301,7 +359,7 @@ RayTriangleIntersection RayTracedRenderer::getClosestValidIntersection(glm::vec3
 Colour RayTracedRenderer::calculateLighting(glm::vec3 point, glm::vec3 normal, Colour baseColour, glm::vec3 faceNormal)
 {
     // Normal used for shading
-    glm::vec3 n = glm::normalize(normal);
+    glm::vec3 normalForShading = glm::normalize(normal);
 
     // Offset to avoid shadow acne
     // Checking same triangle didnt work for me
@@ -317,49 +375,40 @@ Colour RayTracedRenderer::calculateLighting(glm::vec3 point, glm::vec3 normal, C
     // Normalize the direction to the light source
     glm::vec3 lightDir = toLight / distanceToLight;
 
-    // Bool to check if the point is in shadow
-    bool shadowed = false;
-
-    // Only if its between the point and the light source, then its in shadow
-    if (glm::dot(faceNormal, lightDir) > 0.0f)
-        shadowed = isOccluded(origin, lightDir, distanceToLight);
-
-    // Default ambient defined above
+    float visibility = lightVisibility(origin, faceNormal);
     float brightness = AMBIENT;
     float specular = 0.0f;
 
-    // shadowed = false; // For testing, comment this out to see shadows
-
-    // Check Shadowed
-    if (!shadowed)
+    if (visibility > 0.0f)
     {
         // Calculate the angle of incidence using the dot product
-        float incidentAngle = glm::dot(n, lightDir);
+        float incidentAngle = glm::dot(normalForShading, lightDir);
 
         // Calculate using SCIENCE?!?! (Might change if it looks bad)
         float proximity = LIGHT_INTENSITY / (4.0f * PI * distanceToLight * distanceToLight);
 
-        // Add the proximity calculation to the brightness, this means that nothing is dimmer than the ambient light
-        brightness += proximity * std::max(incidentAngle, 0.0f);
+        brightness += visibility * proximity * std::max(incidentAngle, 0.0f);
 
         // If the incident angle is positive, calculate the specular reflection component
         if (incidentAngle > 0.0f)
         {
             // Reflect the light direction about the normal
-            glm::vec3 reflected = (2.0f * glm::dot(lightDir, n) * n) - lightDir;
+            glm::vec3 reflected = (2.0f * glm::dot(lightDir, normalForShading) * normalForShading) - lightDir;
 
             // Calculate the view direction from the point to the camera
             glm::vec3 viewDir = glm::normalize(viewOrigin - point);
 
             // Specular component from given formula
             // Looks nicer like this
-            specular = 0.5f * std::pow(
-                                  std::max(
-                                      glm::dot(
-                                          reflected,
-                                          viewDir),
-                                      0.0f),
-                                  SPECULAR_EXPONENT);
+            specular = visibility *
+                       0.5f *
+                       std::pow(
+                           std::max(
+                               glm::dot(
+                                   reflected,
+                                   viewDir),
+                               0.0f),
+                           SPECULAR_EXPONENT);
         }
     }
 

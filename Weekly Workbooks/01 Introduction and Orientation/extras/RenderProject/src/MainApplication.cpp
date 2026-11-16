@@ -25,11 +25,14 @@ extern bool WireframeBool;
 int isOrbiting = 0; // 0 = not orbiting, 1 = clockwise, -1 = counterclockwise
 bool isLookAtEnabled = false;
 
+// Bool to check if we need to redraw
 bool forceRayTraceRedraw = false;
 
+// Bool for different shading techniques
 bool GouraudShadingEnabled = false;
 bool PhongShadingEnabled = false;
 
+// Bool to check if the sphere and boxes are showing
 bool isSphereShowing = true;
 bool isBlueBoxShowing = true;
 bool isRedBoxShowing = true;
@@ -41,7 +44,14 @@ bool swirlEnabled = false;
 // Flag to enable/disable reflex lens effect
 bool reflexLensEnabled = false;
 
-bool worldMirroringEnabled = true; // Flag to enable/disable world mirroring
+// Flag to enable/disable world mirroring
+bool worldMirroringEnabled = true;
+
+// Flag to enable/disable soft shadows
+bool softShadowsEnabled = true;
+
+glm::vec3 lightMin(0.0f);
+glm::vec3 lightMax(0.0f);
 
 // Texture maps
 std::vector<TextureMap> textures;
@@ -460,6 +470,19 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 			savingFrames = true;
 		}
 		break;
+	case SDLK_o:
+		print("Toggle soft shadows");
+		if (softShadowsEnabled)
+		{
+			print("Disabling soft shadows");
+			softShadowsEnabled = false;
+		}
+		else
+		{
+			print("Enabling soft shadows");
+			softShadowsEnabled = true;
+		}
+		break;
 	default:
 		break;
 	}
@@ -742,11 +765,32 @@ int main(int argc, char *argv[])
 	// Reserve the space, also given by intellisense
 	vertexNormalsByTriangle.reserve(triangles.size());
 
+	glm::vec3 boxMin(std::numeric_limits<float>::max());
+	glm::vec3 boxMax(std::numeric_limits<float>::lowest());
+
 	// Loop through triangles and find the vertex normals
+	// Also find the min and max of the light source
 	for (const ModelTriangle &triangle : triangles)
 	{
 		vertexNormalsByTriangle.push_back(vertexNormals(triangle));
+
+		// Check if the triangle belongs to the light source
+		if (triangle.objectName == "light")
+		{
+			for (const glm::vec3 &vertex : triangle.vertices)
+			{
+				boxMin = glm::min(boxMin, vertex);
+				boxMax = glm::max(boxMax, vertex);
+			}
+		}
 	}
+
+	// Define light position
+	// Stop self shadowing by moving the light down a bit
+	lightMin = boxMin;
+	lightMax = boxMax;
+	lightPosition = (boxMin + boxMax) * 0.5f;
+	lightPosition.y -= 0.01f;
 
 	SDL_Event event;
 
@@ -769,7 +813,10 @@ int main(int argc, char *argv[])
 			lookAt(cameraPosition, cameraOrientation, glm::vec3(0.0f));
 		// Need to ask the SDL window to render the frame, otherwise nothing actually gets shown on the screen !
 		window.renderFrame();
+
+		// Bool to check if the camera has changed since the last frame
 		bool cameraChanged = (tempCameraPosition != cameraPosition || tempCameraOrientation != cameraOrientation);
+		// If we are saving frames, a new frame has been rendered, and either the camera has changed or the current renderer is the ray traced renderer, then save the frame to a file
 		if (savingFrames && newFrameRendered && (cameraChanged || currentRenderer == &rayTracedRenderer))
 		{
 			std::string paddedCounter = std::to_string(frameCounter);
