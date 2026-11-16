@@ -742,7 +742,7 @@ static float fresnelSchlick(float cosTheta, float n1, float n2)
 }
 
 // Attenuate the colour based on the absorption coefficients and distance traveled through the medium
-static Colour attenuateColour(const Colour &colour, const glm::vec3 &absorption, float distance)
+static Colour attenuateColour(const Colour &colour, const glm::vec3 &absorption, float distance, const Colour &scatter = Colour(0, 0, 0))
 {
     // Calculate the transmission for each color channel using the Beer-Lambert law
     glm::vec3 transmission(
@@ -752,13 +752,39 @@ static Colour attenuateColour(const Colour &colour, const glm::vec3 &absorption,
 
     // Return the attenuated colour by multiplying the original colour by the transmission and clamping the values to a maximum of 255
     return Colour(
-        std::min(static_cast<int>(colour.red * transmission.r), 255),
-        std::min(static_cast<int>(colour.green * transmission.g), 255),
-        std::min(static_cast<int>(colour.blue * transmission.b), 255));
+        std::min(static_cast<int>(colour.red * transmission.r + scatter.red * (1.0f - transmission.r)), 255),
+        std::min(static_cast<int>(colour.green * transmission.g + scatter.green * (1.0f - transmission.g)), 255),
+        std::min(static_cast<int>(colour.blue * transmission.b + scatter.blue * (1.0f - transmission.b)), 255));
+}
+
+static glm::vec3 waterNormal(const glm::vec3 &point, const glm::vec3 &flatNormal)
+{
+    struct Wave
+    {
+        glm::vec3 direction;
+        float frequency;
+        float amplitude;
+        float speed;
+    };
+    static const Wave waves[] = {
+        {glm::vec3(0.8f, 0.3f, 0.5f), 9.0f, 0.020f, 1.5f},
+        {glm::vec3(-0.4f, 0.9f, 0.2f), 14.0f, 0.012f, 2.1f},
+        {glm::vec3(0.2f, -0.5f, 0.85f), 23.0f, 0.006f, 3.3f},
+    };
+
+    glm::vec3 gradient(0.0f);
+    for (const Wave &wave : waves)
+    {
+        glm::vec3 d = glm::normalize(wave.direction);
+        float phase = wave.frequency * glm::dot(d, point) + wave.speed * waterTime;
+        gradient += wave.amplitude * wave.frequency * std::cos(phase) * d;
+    }
+    glm::vec3 tangentSlope = gradient - glm::dot(gradient, flatNormal) * flatNormal;
+    return glm::normalize(flatNormal - tangentSlope);
 }
 
 // Trace a ray through the scene, handling reflections, refractions, and shading based on the intersection with triangles
-Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool insideMedium)
+Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool insideMedium, const Colour &mediumScatter)
 {
     if (depth > MAX_REFRACTION_RECURSION_DEPTH)
         return Colour(0, 0, 0);
@@ -768,7 +794,7 @@ Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &dir
 
     // If no intersection is found, return black
     if (intersection.distanceFromCamera <= 0)
-        return Colour(0, 0, 0);
+        return insideMedium ? mediumScatter : Colour(0, 0, 0);
 
     // Get the intersected triangle for further processing
     const ModelTriangle &triangle = intersection.intersectedTriangle;
@@ -780,7 +806,7 @@ Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &dir
     // If the triangle is a light source, attenuate the colour based on the medium absorption and distance traveled
     if (triangle.objectName == "light")
     {
-        return attenuateColour(triangle.colour, mediumAbsorption, distanceThroughMedium);
+        return attenuateColour(triangle.colour, mediumAbsorption, distanceThroughMedium, mediumScatter);
     }
 
     // If the triangle is a mirror and world mirroring is enabled, calculate the reflected ray and trace it recursively
@@ -794,60 +820,60 @@ Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &dir
             reflectedDirection,
             depth + 1,
             mediumAbsorption,
-            insideMedium);
-        return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium);
+            insideMedium,
+            mediumScatter);
+        return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium, mediumScatter);
     }
 
     // If the triangle is refractive and world glass is enabled, handle refraction and reflection using Fresnel-Schlick approximation
     if (triangle.isRefractive && worldRefractiveEnabled)
     {
-        // Calculate the normal, indices of refraction, and determine if the ray is entering or exiting the medium
-        glm::vec3 normal = triangle.normal;
-        float n1 = 1.0f;
-        float n2 = triangle.refractiveIndex;
-
-        bool entering = glm::dot(direction, normal) < 0.0f;
-        if (!entering)
-        {
-            // If the ray is exiting the medium, invert the normal and swap the indices of refraction
-            normal = -normal;
-            // Swap the indices of refraction for exiting the medium
-            std::swap(n1, n2);
-        }
-
-        // Set the hit point of the intersection
         glm::vec3 hitPoint = intersection.intersectionPoint;
 
-        // Calculate the reflected direction using the given reflection formula
+        bool entering = !insideMedium;
+        glm::vec3 surfaceNormal = triangle.isWater ? waterNormal(hitPoint, triangle.normal) : triangle.normal;
+
+        float side = glm::dot(direction, triangle.normal) > 0.0f ? -1.0f : 1.0f;
+        glm::vec3 flatNormal = side * triangle.normal;
+        glm::vec3 normal = side * surfaceNormal;
+
+        float n1 = entering ? 1.0f : triangle.refractiveIndex;
+        float n2 = entering ? triangle.refractiveIndex : 1.0f;
         glm::vec3 reflectedDirection = glm::normalize(direction - 2.0f * glm::dot(direction, normal) * normal);
-        // Trace the reflected ray recursively, offsetting the starting point slightly to avoid self-intersection
+        if (glm::dot(reflectedDirection, flatNormal) < 0.0f)
+            reflectedDirection = glm::normalize(reflectedDirection - 2.0f * glm::dot(reflectedDirection, flatNormal) * flatNormal);
+
         Colour reflectedColour = traceRay(
             hitPoint + reflectedDirection * 0.001f,
             reflectedDirection,
             depth + 1,
-            entering ? glm::vec3(0.0f) : mediumAbsorption,
-            !entering);
+            mediumAbsorption,
+            insideMedium,
+            mediumScatter);
 
         glm::vec3 refractedDirection;
-
-        // Calculate the index of refraction for the ray based on whether it is entering or exiting the medium
         float indexOfRefraction = n1 / n2;
 
-        // Attempt to refract the ray using Snell's law; if refraction fails (total internal reflection), return the attenuated reflected colour
         if (!refractRay(direction, normal, indexOfRefraction, refractedDirection))
         {
-            return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium);
+            return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium, mediumScatter);
+        }
+        if (glm::dot(refractedDirection, flatNormal) > 0.0f &&
+            !refractRay(direction, flatNormal, indexOfRefraction, refractedDirection))
+        {
+            return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium, mediumScatter);
         }
 
-        // Trace the refracted ray recursively, offsetting the starting point slightly to avoid self-intersection
+        Colour insideScatter = triangle.isWater ? triangle.colour : Colour(0, 0, 0);
+
         Colour refractedColour = traceRay(
             hitPoint + refractedDirection * 0.001f,
             refractedDirection,
             depth + 1,
             entering ? triangle.absorption : glm::vec3(0.0f),
-            entering);
+            entering,
+            entering ? insideScatter : Colour(0, 0, 0));
 
-        // Calculate the Fresnel-Schlick factor based on the angle of incidence and the indices of refraction
         float cosTheta = (n1 <= n2) ? glm::dot(-direction, normal)
                                     : -glm::dot(refractedDirection, normal);
         float fresnelSchlickFactor = fresnelSchlick(glm::clamp(cosTheta, 0.0f, 1.0f), n1, n2);
@@ -857,7 +883,7 @@ Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &dir
             std::min(static_cast<int>(fresnelSchlickFactor * reflectedColour.red + refractedFactor * refractedColour.red), 255),
             std::min(static_cast<int>(fresnelSchlickFactor * reflectedColour.green + refractedFactor * refractedColour.green), 255),
             std::min(static_cast<int>(fresnelSchlickFactor * reflectedColour.blue + refractedFactor * refractedColour.blue), 255));
-        return attenuateColour(colour, mediumAbsorption, distanceThroughMedium);
+        return attenuateColour(colour, mediumAbsorption, distanceThroughMedium, mediumScatter);
     }
     viewOrigin = origin;
     return attenuateColour(shadingHelper(intersection), mediumAbsorption, distanceThroughMedium);

@@ -125,9 +125,9 @@ struct MaterialProperties
 
 // Define a map to associate material names with their properties
 const std::unordered_map<std::string, MaterialProperties> materialProperties = {
-	{"Mirror", {true, false, 1.0f, glm::vec3(0.0f)}},
-	{"Glass", {false, true, 1.5f, glm::vec3(0.35f, 0.10f, 0.25f)}},
-	{"Water", {false, true, 1.333f, glm::vec3(0.9f, 0.9f, 0.9f)}}};
+	{"Mirror", {true, false, false, 1.0f, glm::vec3(0.0f)}},
+	{"Glass", {false, false, true, 1.5f, glm::vec3(0.35f, 0.10f, 0.25f)}},
+	{"Water", {false, true, true, 1.333f, glm::vec3(0.90f, 0.25f, 0.15f)}}};
 
 void loadTexture(const std::string &materialName, const std::string &path)
 {
@@ -547,7 +547,7 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 	// Keep track of the current material name for the triangles
 	std::string currentMaterialName;
 
-	MaterialProperties currentMaterialProperties = {false, false, 1.0f, glm::vec3(0.0f)};
+	MaterialProperties currentMaterialProperties = {false, false, false, 1.0f, glm::vec3(0.0f)};
 
 	// While getting lines
 	while (std::getline(file, line))
@@ -659,7 +659,7 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 			// If the material name exists in the map, set currentMaterialProperties to the corresponding properties; otherwise, set it to default values
 			currentMaterialProperties = material != materialProperties.end()
 											? material->second
-											: MaterialProperties{false, false, 1.0f, glm::vec3(0.0f)};
+											: MaterialProperties{false, false, false, 1.0f, glm::vec3(0.0f)};
 
 			// Check if the material name exists in the textureIndexByMaterial map
 			auto tex = textureIndexByMaterial.find(tokens[1]);
@@ -876,6 +876,8 @@ int main(int argc, char *argv[])
 			window.savePPM("saved-frames", paddedCounter + ".ppm");
 			// window.saveBMP("saved-frames", paddedCounter + ".bmp");
 			frameCounter++;
+			waterTime += 1.0f / 25.0f;
+			forceRayTraceRedraw = true;
 		}
 		tempCameraPosition = cameraPosition;
 		tempCameraOrientation = cameraOrientation;
