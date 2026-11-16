@@ -58,6 +58,7 @@ constexpr float REFLEX_RADIUS = 0.5f;
 constexpr float SWIRL_FACTOR = 4.0f;
 constexpr int SHADOW_GRID = 8;
 constexpr int MAX_REFRACTION_RECURSION_DEPTH = 6;
+
 // Thread-local storage for the view origin, which is used in depth of field calculations
 static thread_local glm::vec3 viewOrigin(0.0f);
 static std::vector<int> visibleToOriginalIndex;
@@ -176,13 +177,6 @@ static glm::vec2 sampleLight(const glm::vec3 &origin, const glm::vec3 &shadingNo
     result.y = 0.5f * specularPower(std::max(glm::dot(reflected, viewDir), 0.0f));
 
     return result;
-}
-
-{
-        return flatNormal;
-
-    const glm::vec3 blended = weights.x * normals[0] + weights.y * normals[1] + weights.z * normals[2];
-    return (glm::length(blended) > 1e-6f) ? glm::normalize(blended) : flatNormal;
 }
 
 void RayTracedRenderer::draw(DrawingWindow &window)
@@ -470,8 +464,26 @@ glm::vec3 RayTracedRenderer::barycentricWeights(const RayTriangleIntersection &i
 // Phong shading implementation
 Colour RayTracedRenderer::phongShading(const RayTriangleIntersection &intersection)
 {
-    const glm::vec3 normal = interpolatedNormal(intersection, barycentricWeights(intersection));
-    return calculateLighting(intersection.intersectionPoint, normal, intersection.intersectedTriangle.colour);
+    // Get the needed fields for aesthetic calling
+    Colour colour = intersection.intersectedTriangle.colour;
+    glm::vec3 triangleNormal = intersection.intersectedTriangle.normal;
+
+    // Look up the precomputed vertex normals by triangle index (no silent zero insertion)
+    if (intersection.triangleIndex >= vertexNormalsByTriangle.size())
+    {
+        // Fall back to flat shading if something is out of sync
+        return calculateLighting(intersection.intersectionPoint, triangleNormal, colour);
+    }
+    const std::array<glm::vec3, 3> &normals = vertexNormalsByTriangle[intersection.triangleIndex];
+
+    glm::vec3 weights = barycentricWeights(intersection);
+
+    // Interpolate the normal, then renormalise (interpolated normals are shorter than 1)
+    glm::vec3 interpolated = weights.x * normals[0] + weights.y * normals[1] + weights.z * normals[2];
+    glm::vec3 normal = (glm::length(interpolated) > 1e-6f) ? glm::normalize(interpolated) : triangleNormal;
+
+    // Light the actual hit point with the interpolated normal
+    return calculateLighting(intersection.intersectionPoint, normal, colour);
 }
 
 // Textured shading implementation based on my rasteriser, but with barycentric interpolation of the texture coordinates
@@ -701,102 +713,39 @@ static Colour attenuateColour(const Colour &colour, const glm::vec3 &absorption,
         std::min(static_cast<int>(colour.blue * transmission.b + scatter.blue * (1.0f - transmission.b)), 255));
 }
 
-struct WaterLayer
+struct Wave
 {
-    glm::vec2 scrollSpeed; // texture repeats per second, in (u, v)
-    float tiling;          // texture repeats per world unit
+    glm::vec3 direction;
+    float frequency;
+    float amplitude;
+    float speed;
 };
 
-static const std::array<WaterLayer, 2> WATER_LAYERS = {{
-    {glm::vec2(0.04f, 0.02f), 2.0f},
-    {glm::vec2(-0.03f, 0.05f), 3.3f},
-}};
-
-// Three axes at right angles at a hit point: tangent (u direction), bitangent (v direction), normal
-struct TangentFrame
+static Wave makeWave(const glm::vec3 &direction, float frequency, float amplitude, float speed)
 {
-    glm::vec3 tangent;
-    glm::vec3 bitangent;
-    glm::vec3 normal;
+    return {glm::normalize(direction), frequency, amplitude, speed};
+}
+
+static const std::array<Wave, 3> WATER_WAVES = {
+    makeWave(glm::vec3(0.8f, 0.3f, 0.5f), 9.0f, 0.020f, 1.5f),
+    makeWave(glm::vec3(-0.4f, 0.9f, 0.2f), 14.0f, 0.012f, 2.1f),
+    makeWave(glm::vec3(0.2f, -0.5f, 0.85f), 23.0f, 0.006f, 3.3f),
 };
 
-static TangentFrame makeTangentFrame(const glm::vec3 &normal)
+static glm::vec3 waveSlope(const Wave &wave, const glm::vec3 &point)
 {
-    // Any axis that isn't parallel to the normal will do as a starting point
-    const glm::vec3 helper = (std::abs(normal.y) > 0.9f) ? glm::vec3(1.0f, 0.0f, 0.0f)
-                                                         : glm::vec3(0.0f, 1.0f, 0.0f);
-    const glm::vec3 tangent = glm::normalize(glm::cross(helper, normal));
-    const glm::vec3 bitangent = glm::cross(normal, tangent);
-    return {tangent, bitangent, normal};
+    const float phase = wave.frequency * glm::dot(wave.direction, point) + wave.speed * waterTime;
+    return (wave.amplitude * wave.frequency * std::cos(phase)) * wave.direction;
 }
 
-// One pixel of the map as 0..255 floats, wrapping around the edges so the map tiles
-static glm::vec3 fetchTexel(const TextureMap &map, int x, int y)
+static glm::vec3 waterNormal(const glm::vec3 &point, const glm::vec3 &flatNormal)
 {
-    const int width = static_cast<int>(map.width);
-    const int height = static_cast<int>(map.height);
-    x = ((x % width) + width) % width; // % can be negative in C++, so add width and wrap again
-    y = ((y % height) + height) % height;
+    glm::vec3 slope(0.0f);
+    for (const Wave &wave : WATER_WAVES)
+        slope += waveSlope(wave, point);
 
-    const uint32_t pixel = map.pixels[y * width + x];
-    return glm::vec3((pixel >> 16) & 0xFF, (pixel >> 8) & 0xFF, pixel & 0xFF);
-}
-
-// Bilinear lookup: blend the 4 pixels around (u, v) by how close we are to each one.
-// u and v are in "repeats", so 0..1 covers the whole image once.
-static glm::vec3 sampleBilinear(const TextureMap &map, const glm::vec2 &uv)
-{
-    // Shift by half a pixel so pixel centres sit on whole numbers
-    const float px = uv.x * map.width - 0.5f;
-    const float py = uv.y * map.height - 0.5f;
-
-    const float left = std::floor(px);
-    const float top = std::floor(py);
-    const float fracX = px - left;
-    const float fracY = py - top;
-    const int x0 = static_cast<int>(left);
-    const int y0 = static_cast<int>(top);
-
-    const glm::vec3 upper = glm::mix(fetchTexel(map, x0, y0), fetchTexel(map, x0 + 1, y0), fracX);
-    const glm::vec3 lower = glm::mix(fetchTexel(map, x0, y0 + 1), fetchTexel(map, x0 + 1, y0 + 1), fracX);
-    return glm::mix(upper, lower, fracY);
-}
-
-// RGB 0..255 -> tilt vector -1..1. Centred on 128 so the "no tilt" colour (128, 128, 255)
-// decodes to exactly (0, 0, 1).
-static glm::vec3 decodeNormalColour(const glm::vec3 &rgb)
-{
-    return (rgb - 128.0f) / 127.0f;
-}
-
-// Bumped normal for a water surface, read from the normal map instead of being calculated from sine waves
-static glm::vec3 waterMapNormal(const glm::vec3 &point, const glm::vec3 &baseNormal)
-{
-    // No map loaded (or strength turned off): flat water
-    if (waterNormalMap.pixels.empty() || WATER_NORMAL_STRENGTH <= 0.0f)
-        return baseNormal;
-
-    const TangentFrame frame = makeTangentFrame(baseNormal);
-
-    // Texture coordinates come from the hit point's position along the tangent and bitangent
-    const glm::vec2 surfacePosition(glm::dot(point, frame.tangent), glm::dot(point, frame.bitangent));
-
-    // Average the tilt from each scrolling layer
-    glm::vec3 tilt(0.0f);
-    for (const WaterLayer &layer : WATER_LAYERS)
-    {
-        const glm::vec2 uv = surfacePosition * layer.tiling + layer.scrollSpeed * waterTime;
-        tilt += decodeNormalColour(sampleBilinear(waterNormalMap, uv));
-    }
-    tilt /= float(WATER_LAYERS.size());
-
-    // Scale only the sideways part, so strength controls how far the normal leans
-    tilt.x *= WATER_NORMAL_STRENGTH;
-    tilt.y *= WATER_NORMAL_STRENGTH * NORMAL_MAP_GREEN_SIGN;
-    tilt = glm::normalize(tilt);
-
-    // Turn the tilt from (tangent, bitangent, normal) space into a world-space direction
-    return glm::normalize(frame.tangent * tilt.x + frame.bitangent * tilt.y + frame.normal * tilt.z);
+    const glm::vec3 slopeAlongSurface = slope - glm::dot(slope, flatNormal) * flatNormal;
+    return glm::normalize(flatNormal - slopeAlongSurface);
 }
 
 Colour RayTracedRenderer::mirrorredRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool insideMedium, const Colour &mediumScatter, float distanceThroughMedium)
@@ -820,19 +769,7 @@ Colour RayTracedRenderer::refractedRay(const RayTriangleIntersection &intersecti
     const ModelTriangle &triangle = intersection.intersectedTriangle;
     glm::vec3 hitPoint = intersection.intersectionPoint;
 
-    glm::vec3 surfaceNormal = triangle.normal;
-    if (triangle.isWater)
-    {
-        const glm::vec3 smoothNormal = interpolatedNormal(intersection, barycentricWeights(intersection));
-        surfaceNormal = waterMapNormal(hitPoint, smoothNormal);
-
-        // Debug view: show the normal as a colour (x -> red, y -> green, z -> blue)
-        if (DEBUG_WATER_NORMALS)
-        {
-            const glm::vec3 shown = (surfaceNormal * 0.5f + 0.5f) * 255.0f;
-            return Colour(int(shown.r), int(shown.g), int(shown.b));
-        }
-    }
+    glm::vec3 surfaceNormal = triangle.isWater ? waterNormal(hitPoint, triangle.normal) : triangle.normal;
 
     float side = glm::dot(direction, triangle.normal) > 0.0f ? -1.0f : 1.0f;
     glm::vec3 flatNormal = side * triangle.normal;
