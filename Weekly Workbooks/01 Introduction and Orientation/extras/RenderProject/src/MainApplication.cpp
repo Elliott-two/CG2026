@@ -46,7 +46,12 @@ bool reflexLensEnabled = false;
 
 // Flag to enable/disable world mirroring
 bool worldMirroringEnabled = false;
+
+// Flag to enable/disable world refractive materials
 bool worldRefractiveEnabled = false;
+
+// Flag to enable/disable world metallic materials
+bool worldMetallicEnabled = false;
 
 float waterTime = 0.0f;
 
@@ -122,15 +127,23 @@ struct MaterialProperties
 	bool isMirror;
 	bool isWater;
 	bool isRefractive;
+	bool isMetallic;
+	float roughness;
 	float refractiveIndex;
+	glm::vec3 fresnelReflectance;
 	glm::vec3 absorption;
 };
 
 // Define a map to associate material names with their properties
 const std::unordered_map<std::string, MaterialProperties> materialProperties = {
-	{"Mirror", {true, false, false, 1.0f, glm::vec3(0.0f)}},
-	{"Glass", {false, false, true, 1.5f, glm::vec3(0.35f, 0.10f, 0.25f)}},
-	{"Water", {false, true, true, 1.333f, glm::vec3(0.90f, 0.25f, 0.15f)}}};
+	{"Mirror", {true, false, false, false, 0.0f, 1.0f, glm::vec3(0.0f), glm::vec3(0.0f)}},
+	{"Glass", {false, false, true, false, 0.0f, 1.5f, glm::vec3(0.0f), glm::vec3(0.35f, 0.10f, 0.25f)}},
+	{"Water", {false, true, true, false, 0.0f, 1.333f, glm::vec3(0.0f), glm::vec3(0.90f, 0.25f, 0.15f)}},
+	{"Gold", {false, false, false, true, 0.15f, 1.0f, glm::vec3(1.00f, 0.71f, 0.29f), glm::vec3(0.0f)}},
+	{"Silver", {false, false, false, true, 0.05f, 1.0f, glm::vec3(0.95f, 0.93f, 0.88f), glm::vec3(0.0f)}},
+	{"Copper", {false, false, false, true, 0.53f, 1.0f, glm::vec3(0.95f, 0.64f, 0.54f), glm::vec3(0.0f)}},
+	{"Aluminium", {false, false, false, true, 0.73f, 1.0f, glm::vec3(0.91f, 0.92f, 0.92f), glm::vec3(0.0f)}},
+	{"Iron", {false, false, false, true, 0.9f, 1.0f, glm::vec3(0.56f, 0.57f, 0.58f), glm::vec3(0.04f)}}};
 
 void loadTexture(const std::string &materialName, const std::string &path)
 {
@@ -400,7 +413,17 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 		}
 		break;
 	case SDLK_m:
-		print("Placeholder: toggle metallic surfaces");
+		print("Toggle metallic surfaces");
+		if (worldMetallicEnabled)
+		{
+			print("Disabling metallic surfaces");
+			worldMetallicEnabled = false;
+		}
+		else
+		{
+			print("Enabling metallic surfaces");
+			worldMetallicEnabled = true;
+		}
 		break;
 	case SDLK_e:
 		print("Placeholder: toggle environment maps");
@@ -695,8 +718,7 @@ void updateAnimation()
 	animationTick++;
 }
 
-std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float scalingFactor,
-											const glm::vec3 &translation = glm::vec3(0.0f))
+std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float scalingFactor, const glm::vec3 &translation = glm::vec3(0.0f), const glm::mat3 &rotation = glm::mat3(1.0f))
 {
 
 	// Vector of Triangles
@@ -724,7 +746,8 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 	// Keep track of the current material name for the triangles
 	std::string currentMaterialName;
 
-	MaterialProperties currentMaterialProperties = {false, false, false, 1.0f, glm::vec3(0.0f)};
+	MaterialProperties currentMaterialProperties = {
+		false, false, false, false, 0.0f, 1.0f, glm::vec3(0.0f), glm::vec3(0.0f)};
 
 	// While getting lines
 	while (std::getline(file, line))
@@ -751,11 +774,7 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 		if (prefix == "v" && tokens.size() >= 4)
 		{
 			// Push back and scaling
-			vertices.push_back(glm::vec3(
-								   std::stof(tokens[1]) * scalingFactor,
-								   std::stof(tokens[2]) * scalingFactor,
-								   std::stof(tokens[3]) * scalingFactor) +
-							   translation);
+			vertices.push_back(rotation * glm::vec3(std::stof(tokens[1]) * scalingFactor, std::stof(tokens[2]) * scalingFactor, std::stof(tokens[3]) * scalingFactor) + translation);
 		}
 		else if (prefix == "vt" && tokens.size() >= 3)
 		{
@@ -788,7 +807,10 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 			triangle.isMirror = currentMaterialProperties.isMirror;
 			triangle.isWater = currentMaterialProperties.isWater;
 			triangle.isRefractive = currentMaterialProperties.isRefractive;
+			triangle.isMetallic = currentMaterialProperties.isMetallic;
 			triangle.absorption = currentMaterialProperties.absorption;
+			triangle.fresnelReflectance = currentMaterialProperties.fresnelReflectance;
+			triangle.roughness = currentMaterialProperties.roughness;
 
 			// Only set the refractive index if the triangle is refractive
 			if (triangle.isRefractive)
@@ -836,7 +858,9 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 			// If the material name exists in the map, set currentMaterialProperties to the corresponding properties; otherwise, set it to default values
 			currentMaterialProperties = material != materialProperties.end()
 											? material->second
-											: MaterialProperties{false, false, false, 1.0f, glm::vec3(0.0f)};
+											: MaterialProperties{
+												  false, false, false, false, 0.0f, 1.0f,
+												  glm::vec3(0.0f), glm::vec3(0.0f)};
 
 			// Check if the material name exists in the textureIndexByMaterial map
 			auto tex = textureIndexByMaterial.find(tokens[1]);
@@ -967,7 +991,9 @@ int main(int argc, char *argv[])
 
 	std::vector<std::string> filennames = {
 		"../../../05 Navigation and Transformation/models/textured-cornell-box",
-		"../../../07 Lighting and Shading/resources/sphere"};
+		"../../../07 Lighting and Shading/resources/sphere",
+		//"../../../05 Navigation and Transformation/models/Bunny-LowPoly",
+	};
 	std::string cornellBoxFilename = filennames[0]; // Use the first filename
 	// Get the colour pallete
 	palette = colourParseOBJ(cornellBoxFilename + ".mtl");
@@ -980,10 +1006,25 @@ int main(int argc, char *argv[])
 	// Parse the triangles
 	for (size_t i = 0; i < filennames.size(); ++i)
 	{
-		const glm::vec3 translation = (i == 1)
-										  ? glm::vec3(0.58f, 0.055f, -0.96f)
-										  : glm::vec3(0.0f);
-		std::vector<ModelTriangle> parsedTriangles = triangleParseOBJ(filennames[i] + ".obj", 0.35f, translation);
+		float scalingFactor = 0.35f;
+		glm::vec3 translation(0.0f);
+		glm::mat3 rotation(1.0f);
+
+		if (i == 1)
+		{
+			translation = glm::vec3(0.58f, 0.055f, -0.96f);
+		}
+		else if (i == 2)
+		{
+			scalingFactor = 0.005f;
+			translation = glm::vec3(0.17f, -0.4f, 0.50f);
+			rotation = glm::mat3(
+				glm::vec3(1.0f, 0.0f, 0.0f),
+				glm::vec3(0.0f, 0.0f, -1.0f),
+				glm::vec3(0.0f, 1.0f, 0.0f));
+		}
+		std::vector<ModelTriangle> parsedTriangles = triangleParseOBJ(
+			filennames[i] + ".obj", scalingFactor, translation, rotation);
 		triangles.insert(triangles.end(), parsedTriangles.begin(), parsedTriangles.end());
 	}
 

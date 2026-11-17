@@ -30,6 +30,7 @@ private:
     Colour traceRay(const glm::vec3 &origin, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption = glm::vec3(0.0f), bool insideMedium = false, const Colour &mediumScatter = Colour(0, 0, 0));
     Colour mirrorredRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool insideMedium, const Colour &mediumScatter, float distanceThroughMedium);
     Colour refractedRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool entering, const Colour &mediumScatter, float distanceThroughMedium);
+    Colour mettalicRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool insideMedium, const Colour &mediumScatter, float distanceThroughMedium);
 
     // Barycentric
     glm::vec3 barycentricWeights(const RayTriangleIntersection &intersection);

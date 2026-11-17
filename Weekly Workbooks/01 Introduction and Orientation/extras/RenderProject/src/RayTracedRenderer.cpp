@@ -29,6 +29,7 @@ extern bool PhongShadingEnabled;
 // Flag to enable/disable world mirroring
 extern bool worldMirroringEnabled;
 extern bool worldRefractiveEnabled;
+extern bool worldMetallicEnabled;
 
 extern float waterTime;
 
@@ -51,7 +52,7 @@ extern bool isRedBoxShowing;
 // All of my preset needed things
 constexpr float PI = 3.14159265358979323846f;
 constexpr float IMAGE_SCALE = 500.0f;
-constexpr float LIGHT_INTENSITY = 10.0f;
+constexpr float LIGHT_INTENSITY = 40.0f;
 constexpr float AMBIENT = 0.25f;
 constexpr int SPECULAR_EXPONENT_LOG2 = 5;
 constexpr float REFLEX_RADIUS = 0.5f;
@@ -121,10 +122,10 @@ static glm::vec3 computeBeerLambertTransmission(const glm::vec3 &absorption, flo
         std::exp(-absorption.z * distance));
 }
 
-// Check if a ray is occluded by any triangle in the scene within a specified maximum distance
-static glm::vec3 isOccluded(const glm::vec3 &origin, const glm::vec3 &direction, float maxDistance)
+static glm::vec3 howOccluded(const glm::vec3 &origin, const glm::vec3 &direction, float maxDistance)
 {
-    std::vector<hitShadow> hits;
+    static thread_local std::vector<hitShadow> hits;
+    hits.clear();
     // Loop over all non-culled triangles and check for intersections with the ray
     for (const ModelTriangle &triangle : nonCulledTriangles)
     {
@@ -148,10 +149,32 @@ static glm::vec3 isOccluded(const glm::vec3 &origin, const glm::vec3 &direction,
     std::sort(hits.begin(), hits.end(), [](const hitShadow &a, const hitShadow &b)
               { return a.distance < b.distance; });
 
+    size_t uniqueCount = 0;
+    for (size_t i = 0; i < hits.size(); ++i)
+    {
+        if (uniqueCount > 0 &&
+            hits[uniqueCount - 1].triangle->objectName == hits[i].triangle->objectName &&
+            std::abs(hits[i].distance - hits[uniqueCount - 1].distance) < 1e-4f)
+        {
+            continue;
+        }
+        hits[uniqueCount++] = hits[i];
+    }
+    hits.resize(uniqueCount);
+
     glm::vec3 transmission(1.0f);
 
     for (size_t i = 0; i < hits.size();)
     {
+        const bool entering = glm::dot(direction, hits[i].triangle->normal) < 0.0f;
+
+        if (!entering)
+        {
+            transmission *= computeBeerLambertTransmission(hits[i].triangle->absorption, hits[i].distance);
+            i += 1;
+            continue;
+        }
+
         float entryDistance = hits[i].distance;
         float exitDistance = maxDistance;
         size_t nextIndex = i + 1;
@@ -209,7 +232,7 @@ static std::vector<glm::vec3> sampleLight(const glm::vec3 &origin, const glm::ve
     glm::vec3 lightDir = toLight / distance;
 
     // Check if in full shadow
-    glm::vec3 transmission = isOccluded(origin, lightDir, distance - 0.003f);
+    glm::vec3 transmission = howOccluded(origin, lightDir, distance - 0.003f);
     if (transmission == glm::vec3(0.0f))
         return std::vector<glm::vec3>{diffuse, specular};
 
@@ -260,6 +283,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
     static bool prevReflexLensEnabled = reflexLensEnabled;
     static bool prevSoftShadowsEnabled = softShadowsEnabled;
     static bool prevWorldRefractiveEnabled = worldRefractiveEnabled;
+    static bool prevWorldMetallicEnabled = worldMetallicEnabled;
 
     bool changed = (prevShadingMode != shadingMode) ||
                    (prevSphereShowing != isSphereShowing) ||
@@ -271,7 +295,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
                    (prevSwirlEnabled != swirlEnabled) ||
                    (prevReflexLensEnabled != reflexLensEnabled) ||
                    (prevSoftShadowsEnabled != softShadowsEnabled) ||
-                   (prevWorldRefractiveEnabled != worldRefractiveEnabled);
+                   (prevWorldRefractiveEnabled != worldRefractiveEnabled) || (prevWorldMetallicEnabled != worldMetallicEnabled);
 
     // Check for change
     if (forceRayTraceRedraw || changed)
@@ -289,6 +313,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
         prevReflexLensEnabled = reflexLensEnabled;
         prevSoftShadowsEnabled = softShadowsEnabled;
         prevWorldRefractiveEnabled = worldRefractiveEnabled;
+        prevWorldMetallicEnabled = worldMetallicEnabled;
     }
 
     // Check if the camera has moved or rotated since the last frame
@@ -441,12 +466,14 @@ static std::vector<glm::vec3> sampleAreaLight(const glm::vec3 &origin, const glm
     std::vector<glm::vec3> lightSamples(2, glm::vec3(0.0f));
     std::vector<glm::vec3> total(2, glm::vec3(0.0f));
     for (int i = 0; i < SHADOW_GRID; ++i)
+    {
         for (int j = 0; j < SHADOW_GRID; ++j)
         {
             lightSamples = sampleLight(origin, normal, viewDir, jitteredLightPoint(i, j));
             total[0] += lightSamples[0];
             total[1] += lightSamples[1];
         }
+    }
 
     float totalSamples = float(SHADOW_GRID * SHADOW_GRID);
     float inverseTotalSamples = 1.0f / totalSamples;
@@ -599,6 +626,16 @@ glm::vec2 RayTracedRenderer::randomPointInCircle(float radius)
     float theta = 2.0f * PI * randomFloat();          // Random angle
 
     return glm::vec2(random * std::cos(theta), random * std::sin(theta));
+}
+
+static glm::vec3 randomInUnitSphere()
+{
+    while (true)
+    {
+        glm::vec3 p(randomFloat() * 2.0f - 1.0f, randomFloat() * 2.0f - 1.0f, randomFloat() * 2.0f - 1.0f);
+        if (glm::dot(p, p) < 1.0f)
+            return p;
+    }
 }
 
 // Random point in a circle for swirl effect
@@ -757,6 +794,11 @@ static float fresnelSchlick(float cosTheta, float n1, float n2)
     return r0 + (1.0f - r0) * std::pow(1.0f - cosTheta, 5.0f);
 }
 
+static glm::vec3 fresnelSchlickMetallic(float cosTheta, const glm::vec3 &f0)
+{
+    return f0 + (glm::vec3(1.0f) - f0) * std::pow(1.0f - cosTheta, 5.0f);
+}
+
 // Attenuate the colour based on the absorption coefficients and distance traveled through the medium
 static Colour attenuateColour(const Colour &colour, const glm::vec3 &absorption, float distance, const Colour &scatter = Colour(0, 0, 0))
 {
@@ -843,20 +885,116 @@ Colour RayTracedRenderer::mirrorredRay(const RayTriangleIntersection &intersecti
     return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium);
 }
 
+Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool insideMedium, const Colour &mediumScatter, float distanceThroughMedium)
+{
+    // Calculate the reflected direction using the given reflection formula
+    const ModelTriangle &triangle = intersection.intersectedTriangle;
+
+    // Use the triangle's normal for reflection
+    glm::vec3 normal = triangle.normal;
+
+    // If Phong shading is enabled, interpolate the vertex normals using barycentric weights
+    if (PhongShadingEnabled && intersection.triangleIndex < vertexNormalsByTriangle.size())
+    {
+        // Get the vertex normals for the triangle and calculate the barycentric weights
+        std::array<glm::vec3, 3> normals = vertexNormalsByTriangle[intersection.triangleIndex];
+
+        // Calculate the barycentric weights for the intersection point
+        glm::vec3 weights = barycentricWeights(intersection);
+
+        // Interpolate the vertex normals using the barycentric weights
+        glm::vec3 interpolatedNormal = weights.x * normals[0] + weights.y * normals[1] + weights.z * normals[2];
+
+        // Normalize the interpolated normal if its length is greater than a small threshold to avoid division by zero
+        if (glm::length(interpolatedNormal) > 1e-6f)
+        {
+            normal = glm::normalize(interpolatedNormal);
+        }
+    }
+
+    // Calculate the reflected direction using the given formula
+    glm::vec3 reflectedDirection = glm::normalize(direction - 2.0f * glm::dot(direction, normal) * normal);
+
+    // Determine the number of samples based on the roughness of the triangle.
+    int samples = (triangle.roughness > 0.01f) ? 8 : 1;
+
+    // Accumulate the colour from multiple samples to simulate roughness
+    glm::vec3 accumulatedColour(0.0f);
+
+    // Count the number of valid samples that contribute to the final colour
+    int validSamples = 0;
+
+    // Loop through the number of samples to perturb the reflection ray based on roughness
+    for (int i = 0; i < samples; ++i)
+    {
+        // Perturb the reflection ray by roughness
+        glm::vec3 fuzzyDirection = glm::normalize(reflectedDirection + triangle.roughness * randomInUnitSphere());
+
+        // Reject rays that scatter underneath the surface
+        if (glm::dot(fuzzyDirection, triangle.normal) <= 0.0f)
+        {
+            continue;
+        }
+
+        // Trace the perturbed reflection ray recursively, offsetting the starting point slightly to avoid self-intersection
+        Colour sampleColour = traceRay(
+            intersection.intersectionPoint + triangle.normal * 0.001f,
+            fuzzyDirection,
+            depth + 1,
+            mediumAbsorption,
+            insideMedium,
+            mediumScatter);
+
+        // Accumulate the colour from valid samples
+        accumulatedColour += glm::vec3(sampleColour.red, sampleColour.green, sampleColour.blue);
+        // Increment the count of valid samples
+        validSamples++;
+    }
+
+    // Average the accumulated colour by the number of valid samples to get the final colour
+    if (validSamples > 0)
+        accumulatedColour /= static_cast<float>(validSamples);
+
+    // Apply Conductor Fresnel tint
+    // Calculate the cosine of the angle between the incident direction and the surface normal, clamped to [0, 1]
+    float cosTheta = glm::clamp(glm::dot(-direction, normal), 0.0f, 1.0f);
+    // Calculate the Fresnel tint using the Fresnel-Schlick approximation for metallic surfaces
+    glm::vec3 fresnelTint = fresnelSchlickMetallic(cosTheta, triangle.fresnelReflectance);
+
+    // Tint the accumulated colour based on the Fresnel tint and clamp the values to a maximum of 255
+    Colour tintedColour(
+        std::min(255, static_cast<int>(std::round(accumulatedColour.r * fresnelTint.r))),
+        std::min(255, static_cast<int>(std::round(accumulatedColour.g * fresnelTint.g))),
+        std::min(255, static_cast<int>(std::round(accumulatedColour.b * fresnelTint.b))));
+
+    // Attenuate the tinted colour based on the absorption coefficients and distance traveled through the medium
+    return attenuateColour(tintedColour, mediumAbsorption, distanceThroughMedium, mediumScatter);
+}
+
 Colour RayTracedRenderer::refractedRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool entering, const Colour &mediumScatter, float distanceThroughMedium)
 {
+    // Get the intersected triangle and the intersection point for further processing
     const ModelTriangle &triangle = intersection.intersectedTriangle;
     glm::vec3 hitPoint = intersection.intersectionPoint;
 
+    // Calculate the surface normal based on whether the triangle is water or not, using the waterNormal function for water surfaces
     glm::vec3 surfaceNormal = triangle.isWater ? waterNormal(hitPoint, triangle.normal) : triangle.normal;
 
+    // Determine the side of the surface normal based on the direction of the ray and the triangle's normal
     float side = glm::dot(direction, triangle.normal) > 0.0f ? -1.0f : 1.0f;
+    // Calculate the flat normal and the actual normal for refraction calculations
     glm::vec3 flatNormal = side * triangle.normal;
+    // Calculate the actual normal for refraction calculations, taking into account the side of the surface normal
     glm::vec3 normal = side * surfaceNormal;
 
+    // Determine the indices of refraction for the entering and exiting media based on whether the ray is entering or exiting the triangle
     float n1 = entering ? 1.0f : triangle.refractiveIndex;
     float n2 = entering ? triangle.refractiveIndex : 1.0f;
+
+    // Calculate the reflected direction using the reflection formula and normalize it
     glm::vec3 reflectedDirection = glm::normalize(direction - 2.0f * glm::dot(direction, normal) * normal);
+
+    // If the reflected direction is below the surface, adjust it to ensure it reflects correctly
     if (glm::dot(reflectedDirection, flatNormal) < 0.0f)
         reflectedDirection = glm::normalize(reflectedDirection - 2.0f * glm::dot(reflectedDirection, flatNormal) * flatNormal);
 
@@ -868,9 +1006,11 @@ Colour RayTracedRenderer::refractedRay(const RayTriangleIntersection &intersecti
         !entering,
         mediumScatter);
 
+    // Calculate the refracted direction using Snell's law and check for total internal reflection
     glm::vec3 refractedDirection;
     float indexOfRefraction = n1 / n2;
 
+    // If refraction is not possible (total internal reflection), return the attenuated reflected colour
     if (!refractRay(direction, normal, indexOfRefraction, refractedDirection))
     {
         return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium, mediumScatter);
@@ -881,8 +1021,10 @@ Colour RayTracedRenderer::refractedRay(const RayTriangleIntersection &intersecti
         return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium, mediumScatter);
     }
 
+    // Calculate the colour inside the medium based on whether the triangle is water or not, using the triangle's colour for water surfaces
     Colour insideScatter = triangle.isWater ? triangle.colour : Colour(0, 0, 0);
 
+    // Trace the refracted ray recursively, offsetting the starting point slightly to avoid self-intersection
     Colour refractedColour = traceRay(
         hitPoint + refractedDirection * 0.001f,
         refractedDirection,
@@ -891,6 +1033,7 @@ Colour RayTracedRenderer::refractedRay(const RayTriangleIntersection &intersecti
         entering,
         entering ? insideScatter : Colour(0, 0, 0));
 
+    // Calculate the Fresnel-Schlick factor based on the angle of incidence and the indices of refraction
     float cosTheta = (n1 <= n2) ? glm::dot(-direction, normal)
                                 : -glm::dot(refractedDirection, normal);
     float fresnelSchlickFactor = fresnelSchlick(glm::clamp(cosTheta, 0.0f, 1.0f), n1, n2);
@@ -938,6 +1081,11 @@ Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &dir
     if (triangle.isMirror && worldMirroringEnabled)
     {
         return mirrorredRay(intersection, direction, depth, mediumAbsorption, insideMedium, mediumScatter, distanceThroughMedium);
+    }
+
+    if (triangle.isMetallic && worldMetallicEnabled)
+    {
+        return mettalicRay(intersection, direction, depth, mediumAbsorption, insideMedium, mediumScatter, distanceThroughMedium);
     }
 
     const bool entering = !insideMedium;
