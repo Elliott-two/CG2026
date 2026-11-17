@@ -132,11 +132,14 @@ static glm::vec3 isOccluded(const glm::vec3 &origin, const glm::vec3 &direction,
         // Calculate the distance to the intersection point if the ray intersects with the triangle
         float triangleDistance;
         // If the ray intersects with the triangle and the intersection point is closer than the maximum distance, return true (occluded)
-        if (intersectTriangle(triangle, origin, direction, triangleDistance) && triangleDistance < maxDistance)
-            if (!triangle.isRefractive || !worldRefractiveEnabled)
-            {
-                return glm::vec3(0.0f); // Occluded
-            }
+        if (!intersectTriangle(triangle, origin, direction, triangleDistance) || triangleDistance >= maxDistance)
+        {
+            continue;
+        }
+        if (!triangle.isRefractive || !worldRefractiveEnabled)
+        {
+            return glm::vec3(0.0f); // Occluded
+        }
         hits.push_back({triangleDistance, &triangle});
     }
     if (hits.empty())
@@ -382,7 +385,8 @@ Colour RayTracedRenderer::shadingHelper(RayTriangleIntersection intersection)
         pixelColour = calculateLighting(
             shaded.intersectionPoint,
             shaded.intersectedTriangle.normal,
-            shaded.intersectedTriangle.colour);
+            shaded.intersectedTriangle.colour,
+            shaded.intersectedTriangle.normal);
     }
 
     return pixelColour;
@@ -438,9 +442,12 @@ static std::vector<glm::vec3> sampleAreaLight(const glm::vec3 &origin, const glm
     std::vector<glm::vec3> total(2, glm::vec3(0.0f));
     for (int i = 0; i < SHADOW_GRID; ++i)
         for (int j = 0; j < SHADOW_GRID; ++j)
+        {
             lightSamples = sampleLight(origin, normal, viewDir, jitteredLightPoint(i, j));
-    total[0] += lightSamples[0];
-    total[1] += lightSamples[1];
+            total[0] += lightSamples[0];
+            total[1] += lightSamples[1];
+        }
+
     float totalSamples = float(SHADOW_GRID * SHADOW_GRID);
     float inverseTotalSamples = 1.0f / totalSamples;
     total[0] *= inverseTotalSamples;
@@ -448,12 +455,12 @@ static std::vector<glm::vec3> sampleAreaLight(const glm::vec3 &origin, const glm
     return total;
 }
 
-Colour RayTracedRenderer::calculateLighting(glm::vec3 point, glm::vec3 normal, Colour baseColour)
+Colour RayTracedRenderer::calculateLighting(glm::vec3 point, glm::vec3 normal, Colour baseColour, glm::vec3 faceNormal)
 {
     glm::vec3 normalForShading = glm::normalize(normal);
 
     // Offset to avoid shadow acne
-    glm::vec3 origin = point + normal * 0.005f;
+    glm::vec3 origin = point + faceNormal * 0.005f;
 
     glm::vec3 viewDir = glm::normalize(viewOrigin - point);
 
@@ -484,7 +491,7 @@ std::array<Colour, 3> RayTracedRenderer::gourandShading(RayTriangleIntersection 
     // Light each vertex using its smooth normal
     std::array<Colour, 3> colours;
     for (int i = 0; i < 3; ++i)
-        colours[i] = calculateLighting(triangle.vertices[i], normals[i], triangle.colour);
+        colours[i] = calculateLighting(triangle.vertices[i], normals[i], triangle.colour, triangle.normal);
     return colours;
 }
 
@@ -531,7 +538,7 @@ Colour RayTracedRenderer::phongShading(const RayTriangleIntersection &intersecti
     if (intersection.triangleIndex >= vertexNormalsByTriangle.size())
     {
         // Fall back to flat shading if something is out of sync
-        return calculateLighting(intersection.intersectionPoint, triangleNormal, colour);
+        return calculateLighting(intersection.intersectionPoint, triangleNormal, colour, triangleNormal);
     }
     const std::array<glm::vec3, 3> &normals = vertexNormalsByTriangle[intersection.triangleIndex];
 
@@ -542,7 +549,7 @@ Colour RayTracedRenderer::phongShading(const RayTriangleIntersection &intersecti
     glm::vec3 normal = (glm::length(interpolated) > 1e-6f) ? glm::normalize(interpolated) : triangleNormal;
 
     // Light the actual hit point with the interpolated normal
-    return calculateLighting(intersection.intersectionPoint, normal, colour);
+    return calculateLighting(intersection.intersectionPoint, normal, colour, triangleNormal);
 }
 
 // Textured shading implementation based on my rasteriser, but with barycentric interpolation of the texture coordinates
