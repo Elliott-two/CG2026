@@ -53,7 +53,7 @@ extern bool isRedBoxShowing;
 constexpr float PI = 3.14159265358979323846f;
 constexpr float IMAGE_SCALE = 500.0f;
 constexpr float LIGHT_INTENSITY = 40.0f;
-constexpr float AMBIENT = 0.25f;
+constexpr float AMBIENT = 0.15f;
 constexpr int SPECULAR_EXPONENT_LOG2 = 5;
 constexpr float REFLEX_RADIUS = 0.5f;
 constexpr float SWIRL_FACTOR = 4.0f;
@@ -967,11 +967,12 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
     {
         Colour sampleColour = traceRay(
             intersection.intersectionPoint + faceNormal * 0.001f,
-            direction,
+            reflectedDirection,
             depth + 1,
             mediumAbsorption,
             insideMedium,
             mediumScatter);
+        accumulatedColour = glm::vec3(sampleColour.red, sampleColour.green, sampleColour.blue);
     }
     // Apply Conductor Fresnel tint
     // Calculate the cosine of the angle between the incident direction and the surface normal, clamped to [0, 1]
@@ -999,13 +1000,13 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
 
     glm::vec3 directSpecular = sampledLightResult[1];
 
-    glm::vec3 finalLinearColour = (accumulatedColour + directSpecular * 255.0f) * fresnelTint;
+    glm::vec3 finalLinearColour = (accumulatedColour + directSpecular * 255.0f * (1.0f / triangle.roughness)) * fresnelTint;
 
     // Tint the accumulated colour based on the Fresnel tint and clamp the values to a maximum of 255
     Colour tintedColour(
-        std::min(255, static_cast<int>(std::round(finalLinearColour.r))),
-        std::min(255, static_cast<int>(std::round(finalLinearColour.g))),
-        std::min(255, static_cast<int>(std::round(finalLinearColour.b))));
+        std::min(255, static_cast<int>(std::round(finalLinearColour.r + AMBIENT * 255 * fresnelTint.r))),
+        std::min(255, static_cast<int>(std::round(finalLinearColour.g + AMBIENT * 255 * fresnelTint.g))),
+        std::min(255, static_cast<int>(std::round(finalLinearColour.b + AMBIENT * 255 * fresnelTint.b))));
 
     // Attenuate the tinted colour based on the absorption coefficients and distance traveled through the medium
     return attenuateColour(tintedColour, mediumAbsorption, distanceThroughMedium, mediumScatter);
