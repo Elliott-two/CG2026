@@ -54,6 +54,7 @@ bool worldRefractiveEnabled = false;
 bool worldMetallicEnabled = false;
 
 bool environmentMapEnabled = false;
+bool environmentMapSeenByCamera = false;
 
 float waterTime = 0.0f;
 
@@ -442,6 +443,19 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 		{
 			print("Enabling environment maps");
 			environmentMapEnabled = true;
+		}
+		break;
+	case SDLK_RIGHTBRACKET:
+		print("Toggling environment map visibility");
+		if (environmentMapSeenByCamera)
+		{
+			print("Disabling environment map visibility");
+			environmentMapSeenByCamera = false;
+		}
+		else
+		{
+			print("Enabling environment map visibility");
+			environmentMapSeenByCamera = true;
 		}
 		break;
 	case SDLK_RETURN:
@@ -1003,12 +1017,12 @@ std::vector<Colour> colourParseOBJ(const std::string &filename)
 
 int main(int argc, char *argv[])
 {
+	// Load in textures
 	loadTexture("Cobbles", "../../../05 Navigation and Transformation/models/texture (1).ppm");
-	loadTexture("Environment", "../../../05 Navigation and Transformation/models/environment.ppm");
+	loadTexture("Environment", "../../../05 Navigation and Transformation/models/environment2.ppm");
 
+	// Get the environment map and its dimensions
 	environmentMap = textures[textureIndexByMaterial["Environment"]];
-	environmentTextureWidth = environmentMap.width;
-	environmentTextureHeight = environmentMap.height;
 
 	std::vector<std::string> filennames = {
 		"../../../05 Navigation and Transformation/models/textured-cornell-box",

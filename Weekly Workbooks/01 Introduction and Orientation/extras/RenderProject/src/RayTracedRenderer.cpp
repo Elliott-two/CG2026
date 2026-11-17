@@ -33,6 +33,7 @@ extern bool worldRefractiveEnabled;
 extern bool worldMetallicEnabled;
 
 extern bool environmentMapEnabled;
+extern bool environmentMapSeenByCamera;
 
 extern float waterTime;
 
@@ -289,6 +290,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
     static bool prevWorldRefractiveEnabled = worldRefractiveEnabled;
     static bool prevWorldMetallicEnabled = worldMetallicEnabled;
     static bool prevEnvironmentMapEnabled = environmentMapEnabled;
+    static bool prevEnvironmentMapSeenByCamera = environmentMapSeenByCamera;
 
     bool changed = (prevShadingMode != shadingMode) ||
                    (prevSphereShowing != isSphereShowing) ||
@@ -300,7 +302,10 @@ void RayTracedRenderer::draw(DrawingWindow &window)
                    (prevSwirlEnabled != swirlEnabled) ||
                    (prevReflexLensEnabled != reflexLensEnabled) ||
                    (prevSoftShadowsEnabled != softShadowsEnabled) ||
-                   (prevWorldRefractiveEnabled != worldRefractiveEnabled) || (prevWorldMetallicEnabled != worldMetallicEnabled) || (prevEnvironmentMapEnabled != environmentMapEnabled);
+                   (prevWorldRefractiveEnabled != worldRefractiveEnabled) ||
+                   (prevWorldMetallicEnabled != worldMetallicEnabled) ||
+                   (prevEnvironmentMapEnabled != environmentMapEnabled) ||
+                   (prevEnvironmentMapSeenByCamera != environmentMapSeenByCamera);
 
     // Check for change
     if (forceRayTraceRedraw || changed)
@@ -320,6 +325,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
         prevWorldRefractiveEnabled = worldRefractiveEnabled;
         prevWorldMetallicEnabled = worldMetallicEnabled;
         prevEnvironmentMapEnabled = environmentMapEnabled;
+        prevEnvironmentMapSeenByCamera = environmentMapSeenByCamera;
     }
 
     // Check if the camera has moved or rotated since the last frame
@@ -1107,7 +1113,7 @@ Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &dir
             return mediumScatter;
         }
 
-        if (environmentMapEnabled)
+        if (environmentMapEnabled && environmentMapSeenByCamera)
         {
             return enviornmentHelper(direction);
         }
@@ -1115,6 +1121,11 @@ Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &dir
         if (depth == 0)
         {
             return Colour(0, 0, 0);
+        }
+
+        if (environmentMapEnabled)
+        {
+            return enviornmentHelper(direction);
         }
 
         int sky = static_cast<int>(std::round(AMBIENT_METAL * 255.0f));
