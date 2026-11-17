@@ -894,6 +894,11 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
         faceNormal = -faceNormal;
     }
 
+    if (intersection.triangleIndex >= vertexNormalsByTriangle.size())
+    {
+        // Fall back to flat shading if something is out of sync
+        return mirrorredRay(intersection, direction, depth, mediumAbsorption, insideMedium, mediumScatter, distanceThroughMedium);
+    }
     // Get the vertex normals for the triangle and calculate the barycentric weights
     std::array<glm::vec3, 3> normals = vertexNormalsByTriangle[intersection.triangleIndex];
 
@@ -919,7 +924,7 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
     glm::vec3 reflectedDirection = glm::normalize(direction - 2.0f * glm::dot(direction, normal) * normal);
 
     // Determine the number of samples based on the roughness of the triangle.
-    int samples = (triangle.roughness > 0.01f) ? 8 : 1;
+    int samples = (depth == 0 && triangle.roughness > 0.01f) ? 8 : 1;
 
     // Accumulate the colour from multiple samples to simulate roughness
     glm::vec3 accumulatedColour(0.0f);
@@ -958,21 +963,43 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
     if (validSamples > 0)
         accumulatedColour /= static_cast<float>(validSamples);
 
+    if (validSamples == 0)
+    {
+        Colour sampleColour = traceRay(
+            intersection.intersectionPoint + faceNormal * 0.001f,
+            direction,
+            depth + 1,
+            mediumAbsorption,
+            insideMedium,
+            mediumScatter);
+    }
     // Apply Conductor Fresnel tint
     // Calculate the cosine of the angle between the incident direction and the surface normal, clamped to [0, 1]
     float cosTheta = glm::clamp(glm::dot(-direction, normal), 0.0f, 1.0f);
     // Calculate the Fresnel tint using the Fresnel-Schlick approximation for metallic surfaces
     glm::vec3 fresnelTint = fresnelSchlickMetallic(cosTheta, triangle.fresnelReflectance);
 
-    std::vector<glm::vec3> sampledLight = sampleLight(
-        intersection.intersectionPoint + faceNormal * 0.005f,
-        normal,
-        -direction,
-        lightPosition);
+    std::vector<glm::vec3> sampledLightResult;
 
-    glm::vec3 directSpecular = sampledLight[1];
+    if (softShadowsEnabled)
+    {
+        sampledLightResult = sampleAreaLight(
+            intersection.intersectionPoint + faceNormal * 0.005f,
+            normal,
+            -direction);
+    }
+    else
+    {
+        sampledLightResult = sampleLight(
+            intersection.intersectionPoint + faceNormal * 0.005f,
+            normal,
+            -direction,
+            lightPosition);
+    }
 
-    glm::vec3 finalLinearColour = (accumulatedColour + directSpecular) * fresnelTint;
+    glm::vec3 directSpecular = sampledLightResult[1];
+
+    glm::vec3 finalLinearColour = (accumulatedColour + directSpecular * 255.0f) * fresnelTint;
 
     // Tint the accumulated colour based on the Fresnel tint and clamp the values to a maximum of 255
     Colour tintedColour(
