@@ -53,7 +53,8 @@ extern bool isRedBoxShowing;
 constexpr float PI = 3.14159265358979323846f;
 constexpr float IMAGE_SCALE = 500.0f;
 constexpr float LIGHT_INTENSITY = 40.0f;
-constexpr float AMBIENT = 0.15f;
+constexpr float AMBIENT = 0.25f;
+constexpr float AMBIENT_METAL = 0.05f;
 constexpr int SPECULAR_EXPONENT_LOG2 = 5;
 constexpr float REFLEX_RADIUS = 0.5f;
 constexpr float SWIRL_FACTOR = 4.0f;
@@ -982,7 +983,7 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
 
     std::vector<glm::vec3> sampledLightResult;
 
-    if (softShadowsEnabled)
+    if (softShadowsEnabled && lightMin != lightMax)
     {
         sampledLightResult = sampleAreaLight(
             intersection.intersectionPoint + faceNormal * 0.005f,
@@ -1000,15 +1001,11 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
 
     glm::vec3 directSpecular = sampledLightResult[1];
 
-    glm::vec3 finalLinearColour = (accumulatedColour + directSpecular * 255.0f * (1.0f / triangle.roughness)) * fresnelTint;
-
-    // Tint the accumulated colour based on the Fresnel tint and clamp the values to a maximum of 255
+    glm::vec3 finalLinearColour = (accumulatedColour + directSpecular * 255.0f * std::max(triangle.roughness, 0.05f)) * fresnelTint;
     Colour tintedColour(
-        std::min(255, static_cast<int>(std::round(finalLinearColour.r + AMBIENT * 255 * fresnelTint.r))),
-        std::min(255, static_cast<int>(std::round(finalLinearColour.g + AMBIENT * 255 * fresnelTint.g))),
-        std::min(255, static_cast<int>(std::round(finalLinearColour.b + AMBIENT * 255 * fresnelTint.b))));
-
-    // Attenuate the tinted colour based on the absorption coefficients and distance traveled through the medium
+        std::min(255, static_cast<int>(std::round(finalLinearColour.r + AMBIENT_METAL * 255 * fresnelTint.r))),
+        std::min(255, static_cast<int>(std::round(finalLinearColour.g + AMBIENT_METAL * 255 * fresnelTint.g))),
+        std::min(255, static_cast<int>(std::round(finalLinearColour.b + AMBIENT_METAL * 255 * fresnelTint.b))));
     return attenuateColour(tintedColour, mediumAbsorption, distanceThroughMedium, mediumScatter);
 }
 
