@@ -1002,10 +1002,11 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
     glm::vec3 directSpecular = sampledLightResult[1];
 
     glm::vec3 finalLinearColour = (accumulatedColour + directSpecular * 255.0f * std::max(triangle.roughness, 0.05f)) * fresnelTint;
+
     Colour tintedColour(
-        std::min(255, static_cast<int>(std::round(finalLinearColour.r + AMBIENT_METAL * 255 * fresnelTint.r))),
-        std::min(255, static_cast<int>(std::round(finalLinearColour.g + AMBIENT_METAL * 255 * fresnelTint.g))),
-        std::min(255, static_cast<int>(std::round(finalLinearColour.b + AMBIENT_METAL * 255 * fresnelTint.b))));
+        std::min(255, static_cast<int>(std::round(finalLinearColour.r))),
+        std::min(255, static_cast<int>(std::round(finalLinearColour.g))),
+        std::min(255, static_cast<int>(std::round(finalLinearColour.b))));
     return attenuateColour(tintedColour, mediumAbsorption, distanceThroughMedium, mediumScatter);
 }
 
@@ -1093,9 +1094,18 @@ Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &dir
     // Get the closest valid intersection for the ray
     RayTriangleIntersection intersection = getClosestValidIntersection(origin, direction);
 
-    // If no intersection is found, return black
+    // If no intersection is found or the intersection is behind the camera, return the appropriate colour based on whether the ray is inside a medium or not
     if (intersection.distanceFromCamera <= 0)
-        return insideMedium ? mediumScatter : Colour(0, 0, 0);
+    {
+        if (insideMedium)
+            return mediumScatter;
+
+        if (depth == 0)
+            return Colour(0, 0, 0);
+
+        int sky = static_cast<int>(std::round(AMBIENT_METAL * 255.0f));
+        return Colour(sky, sky, sky);
+    }
 
     // Get the intersected triangle for further processing
     const ModelTriangle &triangle = intersection.intersectedTriangle;
