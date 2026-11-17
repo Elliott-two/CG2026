@@ -641,14 +641,6 @@ glm::vec2 RayTracedRenderer::randomPointInCircle(float radius)
     return glm::vec2(random * std::cos(theta), random * std::sin(theta));
 }
 
-static glm::vec3 randomUnitVector()
-{
-    float zCoordinate = randomFloat() * 2.0f - 1.0f;
-    float phi = 2.0f * PI * randomFloat();
-    float radius = std::sqrt(std::max(0.0f, 1.0f - zCoordinate * zCoordinate));
-    return glm::vec3(radius * std::cos(phi), radius * std::sin(phi), zCoordinate);
-}
-
 // Random point in a circle for swirl effect
 glm::vec2 RayTracedRenderer::randomPointInCircleSwirl(float radius, float u, float v, float swirlFactor)
 {
@@ -957,9 +949,6 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
     // Calculate the reflected direction using the given formula
     glm::vec3 reflectedDirection = glm::normalize(direction - 2.0f * glm::dot(direction, normal) * normal);
 
-    // Determine the number of samples based on the roughness of the triangle.
-    int samples = (depth == 0 && triangle.roughness > 0.01f) ? 8 : 1;
-
     // Accumulate the colour from multiple samples to simulate roughness
     glm::vec3 accumulatedColour(0.0f);
 
@@ -984,6 +973,9 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
     const bool isRoughPrimary = (depth == 0 && triangle.roughness > 0.01f);
     const int gridSize = isRoughPrimary ? 8 : 1;
 
+    const float stretchFactorX = (triangle.objectName == "Aluminium") ? 3.0f : 1.0f;
+    const float stretchFactorY = (triangle.objectName == "Aluminium") ? 0.5f : 1.0f;
+
     for (int i = 0; i < gridSize; ++i)
     {
         for (int j = 0; j < gridSize; ++j)
@@ -996,8 +988,8 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
                 float v = (j + localDistribution(generator)) / static_cast<float>(gridSize);
 
                 glm::vec2 disk = sampleConcentricDisk(u, v);
-                float dx = disk.x * triangle.roughness;
-                float dy = disk.y * triangle.roughness;
+                float dx = disk.x * triangle.roughness * stretchFactorX;
+                float dy = disk.y * triangle.roughness * stretchFactorY;
 
                 fuzzyDirection = glm::normalize(reflectedDirection + tangent * dx + bitangent * dy);
             }
