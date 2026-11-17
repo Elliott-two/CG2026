@@ -1006,7 +1006,7 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
 
     glm::vec3 directSpecular = sampledLightResult[1];
 
-    glm::vec3 finalLinearColour = (accumulatedColour + directSpecular * 255.0f * std::max(triangle.roughness, 0.05f)) * fresnelTint;
+    glm::vec3 finalLinearColour = (accumulatedColour + directSpecular * 255.0f * std::max(1.0f - triangle.roughness, 0.05f)) * fresnelTint;
 
     Colour tintedColour(
         std::min(255, static_cast<int>(std::round(finalLinearColour.r))),
@@ -1107,14 +1107,14 @@ Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &dir
             return mediumScatter;
         }
 
-        if (depth == 0)
-        {
-            return Colour(0, 0, 0);
-        }
-
         if (environmentMapEnabled)
         {
             return enviornmentHelper(direction);
+        }
+
+        if (depth == 0)
+        {
+            return Colour(0, 0, 0);
         }
 
         int sky = static_cast<int>(std::round(AMBIENT_METAL * 255.0f));
