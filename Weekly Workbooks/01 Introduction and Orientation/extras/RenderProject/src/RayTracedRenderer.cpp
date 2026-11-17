@@ -628,14 +628,12 @@ glm::vec2 RayTracedRenderer::randomPointInCircle(float radius)
     return glm::vec2(random * std::cos(theta), random * std::sin(theta));
 }
 
-static glm::vec3 randomInUnitSphere()
+static glm::vec3 randomUnitVector()
 {
-    while (true)
-    {
-        glm::vec3 p(randomFloat() * 2.0f - 1.0f, randomFloat() * 2.0f - 1.0f, randomFloat() * 2.0f - 1.0f);
-        if (glm::dot(p, p) < 1.0f)
-            return p;
-    }
+    float zCoordinate = randomFloat() * 2.0f - 1.0f;
+    float phi = 2.0f * PI * randomFloat();
+    float radius = std::sqrt(std::max(0.0f, 1.0f - zCoordinate * zCoordinate));
+    return glm::vec3(radius * std::cos(phi), radius * std::sin(phi), zCoordinate);
 }
 
 // Random point in a circle for swirl effect
@@ -890,25 +888,30 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
     // Calculate the reflected direction using the given reflection formula
     const ModelTriangle &triangle = intersection.intersectedTriangle;
 
-    // Use the triangle's normal for reflection
-    glm::vec3 normal = triangle.normal;
-
-    // If Phong shading is enabled, interpolate the vertex normals using barycentric weights
-    if (PhongShadingEnabled && intersection.triangleIndex < vertexNormalsByTriangle.size())
+    glm::vec3 faceNormal = triangle.normal;
+    if (glm::dot(direction, faceNormal) > 0.0f)
     {
-        // Get the vertex normals for the triangle and calculate the barycentric weights
-        std::array<glm::vec3, 3> normals = vertexNormalsByTriangle[intersection.triangleIndex];
+        faceNormal = -faceNormal;
+    }
 
-        // Calculate the barycentric weights for the intersection point
-        glm::vec3 weights = barycentricWeights(intersection);
+    // Get the vertex normals for the triangle and calculate the barycentric weights
+    std::array<glm::vec3, 3> normals = vertexNormalsByTriangle[intersection.triangleIndex];
 
-        // Interpolate the vertex normals using the barycentric weights
-        glm::vec3 interpolatedNormal = weights.x * normals[0] + weights.y * normals[1] + weights.z * normals[2];
+    // Calculate the barycentric weights for the intersection point
+    glm::vec3 weights = barycentricWeights(intersection);
 
-        // Normalize the interpolated normal if its length is greater than a small threshold to avoid division by zero
-        if (glm::length(interpolatedNormal) > 1e-6f)
+    // Interpolate the vertex normals using the barycentric weights
+    glm::vec3 interpolatedNormal = weights.x * normals[0] + weights.y * normals[1] + weights.z * normals[2];
+
+    // Normalize the interpolated normal if its length is greater than a small threshold to avoid division by zero
+    glm::vec3 normal = faceNormal;
+    if (glm::length(interpolatedNormal) > 1e-6f)
+    {
+        normal = glm::normalize(interpolatedNormal);
+
+        if (glm::dot(direction, normal) > 0.0f)
         {
-            normal = glm::normalize(interpolatedNormal);
+            normal = -normal;
         }
     }
 
@@ -928,17 +931,17 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
     for (int i = 0; i < samples; ++i)
     {
         // Perturb the reflection ray by roughness
-        glm::vec3 fuzzyDirection = glm::normalize(reflectedDirection + triangle.roughness * randomInUnitSphere());
+        glm::vec3 fuzzyDirection = glm::normalize(reflectedDirection + triangle.roughness * randomUnitVector());
 
         // Reject rays that scatter underneath the surface
-        if (glm::dot(fuzzyDirection, triangle.normal) <= 0.0f)
+        if (glm::dot(fuzzyDirection, faceNormal) <= 0.0f)
         {
             continue;
         }
 
         // Trace the perturbed reflection ray recursively, offsetting the starting point slightly to avoid self-intersection
         Colour sampleColour = traceRay(
-            intersection.intersectionPoint + triangle.normal * 0.001f,
+            intersection.intersectionPoint + faceNormal * 0.001f,
             fuzzyDirection,
             depth + 1,
             mediumAbsorption,
@@ -961,11 +964,21 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
     // Calculate the Fresnel tint using the Fresnel-Schlick approximation for metallic surfaces
     glm::vec3 fresnelTint = fresnelSchlickMetallic(cosTheta, triangle.fresnelReflectance);
 
+    std::vector<glm::vec3> sampledLight = sampleLight(
+        intersection.intersectionPoint + faceNormal * 0.005f,
+        normal,
+        -direction,
+        lightPosition);
+
+    glm::vec3 directSpecular = sampledLight[1];
+
+    glm::vec3 finalLinearColour = (accumulatedColour + directSpecular) * fresnelTint;
+
     // Tint the accumulated colour based on the Fresnel tint and clamp the values to a maximum of 255
     Colour tintedColour(
-        std::min(255, static_cast<int>(std::round(accumulatedColour.r * fresnelTint.r))),
-        std::min(255, static_cast<int>(std::round(accumulatedColour.g * fresnelTint.g))),
-        std::min(255, static_cast<int>(std::round(accumulatedColour.b * fresnelTint.b))));
+        std::min(255, static_cast<int>(std::round(finalLinearColour.r))),
+        std::min(255, static_cast<int>(std::round(finalLinearColour.g))),
+        std::min(255, static_cast<int>(std::round(finalLinearColour.b))));
 
     // Attenuate the tinted colour based on the absorption coefficients and distance traveled through the medium
     return attenuateColour(tintedColour, mediumAbsorption, distanceThroughMedium, mediumScatter);

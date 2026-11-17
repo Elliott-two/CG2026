@@ -141,9 +141,9 @@ const std::unordered_map<std::string, MaterialProperties> materialProperties = {
 	{"Water", {false, true, true, false, 0.0f, 1.333f, glm::vec3(0.0f), glm::vec3(0.90f, 0.25f, 0.15f)}},
 	{"Gold", {false, false, false, true, 0.15f, 1.0f, glm::vec3(1.00f, 0.71f, 0.29f), glm::vec3(0.0f)}},
 	{"Silver", {false, false, false, true, 0.05f, 1.0f, glm::vec3(0.95f, 0.93f, 0.88f), glm::vec3(0.0f)}},
-	{"Copper", {false, false, false, true, 0.53f, 1.0f, glm::vec3(0.95f, 0.64f, 0.54f), glm::vec3(0.0f)}},
-	{"Aluminium", {false, false, false, true, 0.73f, 1.0f, glm::vec3(0.91f, 0.92f, 0.92f), glm::vec3(0.0f)}},
-	{"Iron", {false, false, false, true, 0.9f, 1.0f, glm::vec3(0.56f, 0.57f, 0.58f), glm::vec3(0.04f)}}};
+	{"Copper", {false, false, false, true, 0.33f, 1.0f, glm::vec3(0.95f, 0.64f, 0.54f), glm::vec3(0.0f)}},
+	{"Aluminium", {false, false, false, true, 0.53f, 1.0f, glm::vec3(0.91f, 0.92f, 0.92f), glm::vec3(0.0f)}},
+	{"Iron", {false, false, false, true, 0.8f, 1.0f, glm::vec3(0.56f, 0.57f, 0.58f), glm::vec3(0.04f)}}};
 
 void loadTexture(const std::string &materialName, const std::string &path)
 {
