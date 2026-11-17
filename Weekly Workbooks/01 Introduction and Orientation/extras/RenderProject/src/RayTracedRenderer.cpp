@@ -105,10 +105,26 @@ static bool intersectTriangle(const ModelTriangle &triangle, const glm::vec3 &or
     return triangleDistance > 0.0f;
 }
 
-// Check if a ray is occluded by any triangle in the scene within a specified maximum distance
-static bool isOccluded(const glm::vec3 &origin, const glm::vec3 &direction, float maxDistance)
+struct hitShadow
 {
-    glm::vec3 transmission(1.0f);
+    float distance;
+    const ModelTriangle *triangle;
+};
+
+static glm::vec3 computeBeerLambertTransmission(const glm::vec3 &absorption, float distance)
+{
+
+    // Calculate the transmission for each color channel using the Beer-Lambert law
+    return glm::vec3(
+        std::exp(-absorption.x * distance),
+        std::exp(-absorption.y * distance),
+        std::exp(-absorption.z * distance));
+}
+
+// Check if a ray is occluded by any triangle in the scene within a specified maximum distance
+static glm::vec3 isOccluded(const glm::vec3 &origin, const glm::vec3 &direction, float maxDistance)
+{
+    std::vector<hitShadow> hits;
     // Loop over all non-culled triangles and check for intersections with the ray
     for (const ModelTriangle &triangle : nonCulledTriangles)
     {
@@ -117,9 +133,42 @@ static bool isOccluded(const glm::vec3 &origin, const glm::vec3 &direction, floa
         float triangleDistance;
         // If the ray intersects with the triangle and the intersection point is closer than the maximum distance, return true (occluded)
         if (intersectTriangle(triangle, origin, direction, triangleDistance) && triangleDistance < maxDistance)
-            return true;
+            if (!triangle.isRefractive || !worldRefractiveEnabled)
+            {
+                return glm::vec3(0.0f); // Occluded
+            }
+        hits.push_back({triangleDistance, &triangle});
     }
-    return false;
+    if (hits.empty())
+        return glm::vec3(1.0f); // Not occluded
+
+    std::sort(hits.begin(), hits.end(), [](const hitShadow &a, const hitShadow &b)
+              { return a.distance < b.distance; });
+
+    glm::vec3 transmission(1.0f);
+
+    for (size_t i = 0; i < hits.size();)
+    {
+        float entryDistance = hits[i].distance;
+        float exitDistance = maxDistance;
+        size_t nextIndex = i + 1;
+
+        for (size_t j = i + 1; j < hits.size(); ++j)
+        {
+            if (hits[j].triangle->objectName == hits[i].triangle->objectName)
+            {
+                exitDistance = hits[j].distance;
+                nextIndex = j + 1;
+                break;
+            }
+        }
+
+        float thickness = std::max(0.0f, exitDistance - entryDistance);
+        transmission *= computeBeerLambertTransmission(hits[i].triangle->absorption, thickness);
+        i = nextIndex;
+    }
+
+    return transmission;
 }
 // Calculate the specular power for a given value using repeated squaring
 static float specularPower(float x) //
@@ -136,46 +185,51 @@ static float lightFalloff(float distanceSquared)
 }
 
 // Calculating the light sample for a given point
-static glm::vec2 sampleLight(const glm::vec3 &origin, const glm::vec3 &shadingNormal, const glm::vec3 &viewDir, const glm::vec3 &target)
+static std::vector<glm::vec3> sampleLight(const glm::vec3 &origin, const glm::vec3 &shadingNormal, const glm::vec3 &viewDir, const glm::vec3 &target)
 {
     // Create empty vector
-    glm::vec2 result(0.0f);
+    glm::vec3 diffuse(0.0f);
+    glm::vec3 specular(0.0f);
 
     // Calculate the direction from the shading point to the light source
     glm::vec3 toLight = target - origin;
 
     const float distanceSquared = glm::dot(toLight, toLight);
     if (distanceSquared < 1e-12f)
-        return result;
+        return std::vector<glm::vec3>{diffuse, specular};
 
     float distance = std::sqrt(distanceSquared);
 
     if (distance == 0.0f)
-        return result; // Avoid division by zero
+        return std::vector<glm::vec3>{diffuse, specular}; // Avoid division by zero
 
     glm::vec3 lightDir = toLight / distance;
 
     // Check if in full shadow
-    if (isOccluded(origin, lightDir, distance - 0.003f))
-        return result;
+    glm::vec3 transmission = isOccluded(origin, lightDir, distance - 0.003f);
+    if (transmission == glm::vec3(0.0f))
+        return std::vector<glm::vec3>{diffuse, specular};
 
     // Calculate the incident angle between the shading normal and the light direction
     float incidentAngle = glm::dot(shadingNormal, lightDir);
 
     // If the incident angle is less than 0, return the result with diffuse and specular set to 0 (no light contribution)
     if (incidentAngle <= 0.0f)
-        return result;
+        return std::vector<glm::vec3>{diffuse, specular};
 
     // Calculate using MATHS?!?!
     // Calculate the diffuse and specular contributions based on the incident angle and proximity to the light source
-    result.x = lightFalloff(distanceSquared) * incidentAngle;
+    float diffuseContribution = lightFalloff(distanceSquared) * incidentAngle;
 
     // Given formula
     glm::vec3 reflected = (2.0f * incidentAngle * shadingNormal) - lightDir;
 
-    result.y = 0.5f * specularPower(std::max(glm::dot(reflected, viewDir), 0.0f));
+    float specularContribution = 0.5f * specularPower(std::max(glm::dot(reflected, viewDir), 0.0f));
 
-    return result;
+    diffuse = transmission * diffuseContribution;
+    specular = transmission * specularContribution;
+
+    return std::vector<glm::vec3>{diffuse, specular};
 }
 
 void RayTracedRenderer::draw(DrawingWindow &window)
@@ -378,13 +432,19 @@ static glm::vec3 jitteredLightPoint(int i, int j)
                      glm::mix(lightMin.z, lightMax.z, alongZ));
 }
 
-static glm::vec2 sampleAreaLight(const glm::vec3 &origin, const glm::vec3 &normal, const glm::vec3 &viewDir)
+static std::vector<glm::vec3> sampleAreaLight(const glm::vec3 &origin, const glm::vec3 &normal, const glm::vec3 &viewDir)
 {
-    glm::vec2 total(0.0f);
+    std::vector<glm::vec3> lightSamples(2, glm::vec3(0.0f));
+    std::vector<glm::vec3> total(2, glm::vec3(0.0f));
     for (int i = 0; i < SHADOW_GRID; ++i)
         for (int j = 0; j < SHADOW_GRID; ++j)
-            total += sampleLight(origin, normal, viewDir, jitteredLightPoint(i, j));
-    total /= float(SHADOW_GRID * SHADOW_GRID);
+            lightSamples = sampleLight(origin, normal, viewDir, jitteredLightPoint(i, j));
+    total[0] += lightSamples[0];
+    total[1] += lightSamples[1];
+    float totalSamples = float(SHADOW_GRID * SHADOW_GRID);
+    float inverseTotalSamples = 1.0f / totalSamples;
+    total[0] *= inverseTotalSamples;
+    total[1] *= inverseTotalSamples;
     return total;
 }
 
@@ -398,17 +458,17 @@ Colour RayTracedRenderer::calculateLighting(glm::vec3 point, glm::vec3 normal, C
     glm::vec3 viewDir = glm::normalize(viewOrigin - point);
 
     const bool useAreaLight = softShadowsEnabled && lightMin != lightMax;
-    glm::vec2 total(0.0f);
+    std::vector<glm::vec3> total(2, glm::vec3(0.0f));
 
     total = useAreaLight ? sampleAreaLight(origin, normalForShading, viewDir)
                          : sampleLight(origin, normalForShading, viewDir, lightPosition);
 
-    float brightness = glm::clamp(AMBIENT + total.x, 0.0f, 1.0f);
+    glm::vec3 brightness = glm::clamp(AMBIENT + total[0], 0.0f, 1.0f);
 
     return Colour(
-        std::min(255, int(std::round(baseColour.red * brightness + 255.0f * total.y))),
-        std::min(255, int(std::round(baseColour.green * brightness + 255.0f * total.y))),
-        std::min(255, int(std::round(baseColour.blue * brightness + 255.0f * total.y))));
+        std::min(255, int(std::round(baseColour.red * brightness.x + 255.0f * total[1].x))),
+        std::min(255, int(std::round(baseColour.green * brightness.y + 255.0f * total[1].y))),
+        std::min(255, int(std::round(baseColour.blue * brightness.z + 255.0f * total[1].z))));
 }
 
 std::array<Colour, 3> RayTracedRenderer::gourandShading(RayTriangleIntersection intersection)
@@ -688,16 +748,6 @@ static float fresnelSchlick(float cosTheta, float n1, float n2)
     r0 *= r0;
     // Use the Fresnel-Schlick approximation to calculate the reflectance based on the incident angle (cosTheta)
     return r0 + (1.0f - r0) * std::pow(1.0f - cosTheta, 5.0f);
-}
-
-static glm::vec3 computeBeerLambertTransmission(const glm::vec3 &absorption, float distance)
-{
-
-    // Calculate the transmission for each color channel using the Beer-Lambert law
-    return glm::vec3(
-        std::exp(-absorption.x * distance),
-        std::exp(-absorption.y * distance),
-        std::exp(-absorption.z * distance));
 }
 
 // Attenuate the colour based on the absorption coefficients and distance traveled through the medium
