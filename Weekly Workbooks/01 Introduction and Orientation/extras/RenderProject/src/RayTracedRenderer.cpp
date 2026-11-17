@@ -467,6 +467,7 @@ RayTriangleIntersection RayTracedRenderer::getClosestValidIntersection(glm::vec3
 
 static glm::vec3 jitteredLightPoint(int i, int j)
 {
+
     const float alongX = (i + randomFloat()) / SHADOW_GRID;
     const float alongZ = (j + randomFloat()) / SHADOW_GRID;
     return glm::vec3(glm::mix(lightMin.x, lightMax.x, alongX), lightMin.y,
@@ -895,6 +896,27 @@ Colour RayTracedRenderer::mirrorredRay(const RayTriangleIntersection &intersecti
     return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium);
 }
 
+static glm::vec2 sampleConcentricDisk(float u, float v)
+{
+    float a = 2.0f * u - 1.0f;
+    float b = 2.0f * v - 1.0f;
+    if (a == 0.0f && b == 0.0f)
+        return glm::vec2(0.0f);
+
+    float r, theta;
+    if (std::abs(a) > std::abs(b))
+    {
+        r = a;
+        theta = (PI / 4.0f) * (b / a);
+    }
+    else
+    {
+        r = b;
+        theta = (PI / 2.0f) - (PI / 4.0f) * (a / b);
+    }
+    return glm::vec2(r * std::cos(theta), r * std::sin(theta));
+}
+
 Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool insideMedium, const Colour &mediumScatter, float distanceThroughMedium)
 {
     // Calculate the reflected direction using the given reflection formula
@@ -944,31 +966,58 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
     // Count the number of valid samples that contribute to the final colour
     int validSamples = 0;
 
-    // Loop through the number of samples to perturb the reflection ray based on roughness
-    for (int i = 0; i < samples; ++i)
+    int seedX = static_cast<int>(std::round(intersection.intersectionPoint.x * 1000.0f));
+    int seedY = static_cast<int>(std::round(intersection.intersectionPoint.y * 1000.0f));
+    int seedZ = static_cast<int>(std::round(intersection.intersectionPoint.z * 1000.0f));
+
+    std::seed_seq seed{seedX, seedY, seedZ};
+    std::mt19937 generator(seed);
+    std::uniform_real_distribution<float> localDistribution(0.0f, 1.0f);
+
+    glm::vec3 helperUp = (std::abs(reflectedDirection.y) > 0.999f)
+                             ? glm::vec3(0.0f, 0.0f, 1.0f)
+                             : glm::vec3(0.0f, 1.0f, 0.0f);
+
+    glm::vec3 tangent = glm::normalize(glm::cross(helperUp, reflectedDirection));
+    glm::vec3 bitangent = glm::cross(reflectedDirection, tangent);
+
+    const bool isRoughPrimary = (depth == 0 && triangle.roughness > 0.01f);
+    const int gridSize = isRoughPrimary ? 8 : 1;
+
+    for (int i = 0; i < gridSize; ++i)
     {
-        // Perturb the reflection ray by roughness
-        glm::vec3 fuzzyDirection = glm::normalize(reflectedDirection + triangle.roughness * randomUnitVector());
-
-        // Reject rays that scatter underneath the surface
-        if (glm::dot(fuzzyDirection, faceNormal) <= 0.0f)
+        for (int j = 0; j < gridSize; ++j)
         {
-            continue;
+            glm::vec3 fuzzyDirection = reflectedDirection;
+
+            if (isRoughPrimary)
+            {
+                float u = (i + localDistribution(generator)) / static_cast<float>(gridSize);
+                float v = (j + localDistribution(generator)) / static_cast<float>(gridSize);
+
+                glm::vec2 disk = sampleConcentricDisk(u, v);
+                float dx = disk.x * triangle.roughness;
+                float dy = disk.y * triangle.roughness;
+
+                fuzzyDirection = glm::normalize(reflectedDirection + tangent * dx + bitangent * dy);
+            }
+
+            if (glm::dot(fuzzyDirection, faceNormal) <= 0.0f)
+            {
+                continue;
+            }
+
+            Colour sampleColour = traceRay(
+                intersection.intersectionPoint + faceNormal * 0.001f,
+                fuzzyDirection,
+                depth + 1,
+                mediumAbsorption,
+                insideMedium,
+                mediumScatter);
+
+            accumulatedColour += glm::vec3(sampleColour.red, sampleColour.green, sampleColour.blue);
+            validSamples++;
         }
-
-        // Trace the perturbed reflection ray recursively, offsetting the starting point slightly to avoid self-intersection
-        Colour sampleColour = traceRay(
-            intersection.intersectionPoint + faceNormal * 0.001f,
-            fuzzyDirection,
-            depth + 1,
-            mediumAbsorption,
-            insideMedium,
-            mediumScatter);
-
-        // Accumulate the colour from valid samples
-        accumulatedColour += glm::vec3(sampleColour.red, sampleColour.green, sampleColour.blue);
-        // Increment the count of valid samples
-        validSamples++;
     }
 
     // Average the accumulated colour by the number of valid samples to get the final colour
@@ -1012,7 +1061,10 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
 
     glm::vec3 directSpecular = sampledLightResult[1];
 
-    glm::vec3 finalLinearColour = (accumulatedColour + directSpecular * 255.0f * std::max(1.0f - triangle.roughness, 0.05f)) * fresnelTint;
+    float glossyFactor = std::max(1.0f - triangle.roughness, 0.05f);
+    float glossyScale = glossyFactor * glossyFactor;
+
+    glm::vec3 finalLinearColour = (accumulatedColour + directSpecular * 255.0f * glossyScale) * fresnelTint;
 
     Colour tintedColour(
         std::min(255, static_cast<int>(std::round(finalLinearColour.r))),

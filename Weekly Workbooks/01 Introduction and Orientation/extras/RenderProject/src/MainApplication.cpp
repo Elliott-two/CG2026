@@ -1027,7 +1027,7 @@ int main(int argc, char *argv[])
 	std::vector<std::string> filennames = {
 		"../../../05 Navigation and Transformation/models/textured-cornell-box",
 		"../../../07 Lighting and Shading/resources/sphere",
-		"../../../05 Navigation and Transformation/models/Bunny-LowPoly",
+		//"../../../05 Navigation and Transformation/models/Bunny-LowPoly",
 	};
 	std::string cornellBoxFilename = filennames[0]; // Use the first filename
 	// Get the colour pallete
