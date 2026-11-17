@@ -17,6 +17,7 @@ extern int raysPerPixel;
 extern glm::vec3 lightPosition;
 extern std::vector<std::array<glm::vec3, 3>> vertexNormalsByTriangle;
 extern std::vector<TextureMap> textures;
+extern TextureMap environmentMap;
 
 extern bool forceRayTraceRedraw;
 
@@ -30,6 +31,8 @@ extern bool PhongShadingEnabled;
 extern bool worldMirroringEnabled;
 extern bool worldRefractiveEnabled;
 extern bool worldMetallicEnabled;
+
+extern bool environmentMapEnabled;
 
 extern float waterTime;
 
@@ -285,6 +288,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
     static bool prevSoftShadowsEnabled = softShadowsEnabled;
     static bool prevWorldRefractiveEnabled = worldRefractiveEnabled;
     static bool prevWorldMetallicEnabled = worldMetallicEnabled;
+    static bool prevEnvironmentMapEnabled = environmentMapEnabled;
 
     bool changed = (prevShadingMode != shadingMode) ||
                    (prevSphereShowing != isSphereShowing) ||
@@ -296,7 +300,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
                    (prevSwirlEnabled != swirlEnabled) ||
                    (prevReflexLensEnabled != reflexLensEnabled) ||
                    (prevSoftShadowsEnabled != softShadowsEnabled) ||
-                   (prevWorldRefractiveEnabled != worldRefractiveEnabled) || (prevWorldMetallicEnabled != worldMetallicEnabled);
+                   (prevWorldRefractiveEnabled != worldRefractiveEnabled) || (prevWorldMetallicEnabled != worldMetallicEnabled) || (prevEnvironmentMapEnabled != environmentMapEnabled);
 
     // Check for change
     if (forceRayTraceRedraw || changed)
@@ -315,6 +319,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
         prevSoftShadowsEnabled = softShadowsEnabled;
         prevWorldRefractiveEnabled = worldRefractiveEnabled;
         prevWorldMetallicEnabled = worldMetallicEnabled;
+        prevEnvironmentMapEnabled = environmentMapEnabled;
     }
 
     // Check if the camera has moved or rotated since the last frame
@@ -1098,10 +1103,19 @@ Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &dir
     if (intersection.distanceFromCamera <= 0)
     {
         if (insideMedium)
+        {
             return mediumScatter;
+        }
 
         if (depth == 0)
+        {
             return Colour(0, 0, 0);
+        }
+
+        if (environmentMapEnabled)
+        {
+            return enviornmentHelper(direction);
+        }
 
         int sky = static_cast<int>(std::round(AMBIENT_METAL * 255.0f));
         return Colour(sky, sky, sky);
@@ -1144,4 +1158,30 @@ Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &dir
     }
     viewOrigin = origin;
     return throughMedium(shadingHelper(intersection), Colour(0, 0, 0));
+}
+
+Colour RayTracedRenderer::enviornmentHelper(const glm::vec3 &direction)
+{
+    glm::vec3 normalizedDirection = glm::normalize(direction);
+
+    float longitude = std::atan2(-normalizedDirection.z, normalizedDirection.x);
+
+    float latitude = std::asin(glm::clamp(normalizedDirection.y, -1.0f, 1.0f));
+
+    float u = longitude / (2.0f * PI) + 0.5f;
+    float v = 0.5f - latitude / PI;
+
+    const int environmentTextureWidth = static_cast<int>(environmentMap.width);
+    const int environmentTextureHeight = static_cast<int>(environmentMap.height);
+
+    int x = static_cast<int>(u * environmentTextureWidth) % environmentTextureWidth;
+    if (x < 0)
+    {
+        x += environmentTextureWidth;
+    }
+
+    const int y = glm::clamp(static_cast<int>(v * environmentTextureHeight), 0, environmentTextureHeight - 1);
+
+    const uint32_t packed = environmentMap.pixels[y * environmentTextureWidth + x];
+    return Colour((packed >> 16) & 0xFF, (packed >> 8) & 0xFF, packed & 0xFF);
 }

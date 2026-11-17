@@ -53,6 +53,8 @@ bool worldRefractiveEnabled = false;
 // Flag to enable/disable world metallic materials
 bool worldMetallicEnabled = false;
 
+bool environmentMapEnabled = false;
+
 float waterTime = 0.0f;
 
 // Flag to enable/disable soft shadows
@@ -63,8 +65,12 @@ glm::vec3 lightMin(0.0f);
 glm::vec3 lightMax(0.0f);
 
 // Texture maps
+TextureMap environmentMap;
 std::vector<TextureMap> textures;
 std::unordered_map<std::string, int> textureIndexByMaterial;
+
+int environmentTextureWidth = 0;
+int environmentTextureHeight = 0;
 
 DrawingWindow window = DrawingWindow(WIDTH, HEIGHT);
 
@@ -426,7 +432,17 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 		}
 		break;
 	case SDLK_e:
-		print("Placeholder: toggle environment maps");
+		print("Toggle environment maps");
+		if (environmentMapEnabled)
+		{
+			print("Disabling environment maps");
+			environmentMapEnabled = false;
+		}
+		else
+		{
+			print("Enabling environment maps");
+			environmentMapEnabled = true;
+		}
 		break;
 	case SDLK_RETURN:
 		print("Toggling fullscreen");
@@ -988,6 +1004,11 @@ std::vector<Colour> colourParseOBJ(const std::string &filename)
 int main(int argc, char *argv[])
 {
 	loadTexture("Cobbles", "../../../05 Navigation and Transformation/models/texture (1).ppm");
+	loadTexture("Environment", "../../../05 Navigation and Transformation/models/environment.ppm");
+
+	environmentMap = textures[textureIndexByMaterial["Environment"]];
+	environmentTextureWidth = environmentMap.width;
+	environmentTextureHeight = environmentMap.height;
 
 	std::vector<std::string> filennames = {
 		"../../../05 Navigation and Transformation/models/textured-cornell-box",
