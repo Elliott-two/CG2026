@@ -108,11 +108,10 @@ static bool intersectTriangle(const ModelTriangle &triangle, const glm::vec3 &or
 // Check if a ray is occluded by any triangle in the scene within a specified maximum distance
 static bool isOccluded(const glm::vec3 &origin, const glm::vec3 &direction, float maxDistance)
 {
+    glm::vec3 transmission(1.0f);
     // Loop over all non-culled triangles and check for intersections with the ray
     for (const ModelTriangle &triangle : nonCulledTriangles)
     {
-        if (worldRefractiveEnabled && triangle.isRefractive)
-            continue;
 
         // Calculate the distance to the intersection point if the ray intersects with the triangle
         float triangleDistance;
@@ -656,6 +655,7 @@ void RayTracedRenderer::focusOnPixel(int x, int y)
         focalDistance = glm::dot(hit.intersectionPoint - cameraPosition, forward);
         std::cout << "Focused on " << hit.intersectedTriangle.objectName
                   << " (focalDistance = " << focalDistance << ")" << std::endl;
+        std::cout << "Real Values" << " (x = " << x << ", y = " << y << ")" << std::endl;
     }
 }
 
@@ -719,33 +719,55 @@ struct Wave
     float frequency;
     float amplitude;
     float speed;
+    float steepness;
 };
 
-static Wave makeWave(const glm::vec3 &direction, float frequency, float amplitude, float speed)
+static Wave makeWave(const glm::vec3 &direction, float frequency, float amplitude, float speed, float steepness)
 {
-    return {glm::normalize(direction), frequency, amplitude, speed};
+    return {glm::normalize(direction), frequency, amplitude, speed, steepness};
 }
 
-static const std::array<Wave, 3> WATER_WAVES = {
-    makeWave(glm::vec3(0.8f, 0.3f, 0.5f), 9.0f, 0.020f, 1.5f),
-    makeWave(glm::vec3(-0.4f, 0.9f, 0.2f), 14.0f, 0.012f, 2.1f),
-    makeWave(glm::vec3(0.2f, -0.5f, 0.85f), 23.0f, 0.006f, 3.3f),
+static const std::array<Wave, 4> WATER_WAVES = {
+    makeWave(glm::vec3(0.82f, 0.15f, 0.55f), 4.2f, 0.035f, 1.10f, 0.9f),
+    makeWave(glm::vec3(-0.35f, 0.22f, 0.91f), 9.7f, 0.018f, 1.75f, 0.75f),
+    makeWave(glm::vec3(0.51f, -0.40f, -0.76f), 21.3f, 0.008f, 2.85f, 0.50f),
+    makeWave(glm::vec3(-0.88f, -0.18f, -0.44f), 2.0f, 0.003f, 4.40f, 0.35f),
 };
-
-static glm::vec3 waveSlope(const Wave &wave, const glm::vec3 &point)
-{
-    const float phase = wave.frequency * glm::dot(wave.direction, point) + wave.speed * waterTime;
-    return (wave.amplitude * wave.frequency * std::cos(phase)) * wave.direction;
-}
 
 static glm::vec3 waterNormal(const glm::vec3 &point, const glm::vec3 &flatNormal)
 {
-    glm::vec3 slope(0.0f);
-    for (const Wave &wave : WATER_WAVES)
-        slope += waveSlope(wave, point);
+    glm::vec3 totalSlope(0.0f);
+    glm::vec3 domainWarp(0.0f);
 
-    const glm::vec3 slopeAlongSurface = slope - glm::dot(slope, flatNormal) * flatNormal;
-    return glm::normalize(flatNormal - slopeAlongSurface);
+    for (const Wave &wave : WATER_WAVES)
+    {
+        // Project wave direction onto the local tangent plane so waves travel across the surface
+        glm::vec3 tangentDir = wave.direction - glm::dot(wave.direction, flatNormal) * flatNormal;
+        const float dirLen = glm::length(tangentDir);
+        if (dirLen < 1e-5f)
+            continue;
+        tangentDir /= dirLen;
+
+        // Distort the sample position using accumulated slopes from larger waves
+        const glm::vec3 warpedPoint = point + domainWarp;
+        const float phase = wave.frequency * glm::dot(tangentDir, warpedPoint) + wave.speed * waterTime;
+
+        const float s = std::sin(phase);
+        const float c = std::cos(phase);
+
+        // Exponentially shape the derivative (exp(sin) derivative = cos * exp(sin))
+        // This creates narrow, peaked crests and wide, smooth troughs
+        const float peakFactor = std::exp(wave.steepness * s - wave.steepness);
+        const float dHeight = wave.amplitude * wave.frequency * c * peakFactor;
+
+        const glm::vec3 waveGrad = tangentDir * dHeight;
+        totalSlope += waveGrad;
+
+        // Feed a fraction of this wave's gradient into the next octave's phase
+        domainWarp -= waveGrad * (0.35f / wave.frequency);
+    }
+
+    return glm::normalize(flatNormal - totalSlope);
 }
 
 Colour RayTracedRenderer::mirrorredRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool insideMedium, const Colour &mediumScatter, float distanceThroughMedium)
@@ -761,7 +783,7 @@ Colour RayTracedRenderer::mirrorredRay(const RayTriangleIntersection &intersecti
         mediumAbsorption,
         insideMedium,
         mediumScatter);
-    return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium, mediumScatter);
+    return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium);
 }
 
 Colour RayTracedRenderer::refractedRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool entering, const Colour &mediumScatter, float distanceThroughMedium)

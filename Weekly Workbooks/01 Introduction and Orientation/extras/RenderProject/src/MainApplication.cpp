@@ -529,6 +529,46 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 		break;
 	}
 }
+int ZoomInStartTime = 0;
+int ZoomInEndTime = ZoomInStartTime + 480;
+int ZoomOutStartTime = ZoomInEndTime;
+int ZoomOutEndTime = ZoomOutStartTime + 120;
+int BounceStartTime = ZoomOutEndTime;
+int BounceEndTime = BounceStartTime + 120;
+int WireFrameHoldStartTime = BounceEndTime;
+int WireFrameHoldEndTime = WireFrameHoldStartTime + 400;
+int WireFrameEndTime = WireFrameHoldEndTime;
+int WireFrameBuffer = WireFrameEndTime + 50;
+int OrbitStartTime = WireFrameBuffer + 60;
+int OrbitBuffer = OrbitStartTime + 2;
+int OrbitEndTime = OrbitBuffer + 1460;
+int OrbitBuffer2 = OrbitEndTime + 420;
+int PanStartTime = OrbitBuffer2;
+int PanEndTime = PanStartTime + 400;
+int PanBackStartTime = PanEndTime + 200;
+int PanBackEndTime = PanBackStartTime + 400;
+int GouraudStartTime = PanBackEndTime + 80;
+int GouraudEndTime = GouraudStartTime + 120;
+int PhongStartTime = GouraudEndTime;
+int PhongEndTime = PhongStartTime + 120;
+int softShadowsStartTime = PhongEndTime + 120;
+int softShadowsEndTime = softShadowsStartTime + 240;
+int PanBack2StartTime = softShadowsEndTime;
+int PanBack2EndTime = PanBack2StartTime + 120;
+int ZoomInStartTime2 = PanBack2EndTime;
+int ZoomInEndTime2 = ZoomInStartTime2 + 400;
+int ZoomOutStartTime2 = ZoomInEndTime2;
+int ZoomOutEndTime2 = ZoomOutStartTime2 + 400;
+int unPanCameraStartTime = ZoomOutEndTime2 + 320;
+int unPanCameraEndTime = unPanCameraStartTime + 120;
+int DepthOfFieldStartTime = unPanCameraEndTime;
+int DepthOfFieldEndTime = DepthOfFieldStartTime + 100;
+int SwirlStartTime = DepthOfFieldEndTime;
+int SwirlEndTime = SwirlStartTime + 100;
+int ReflexLensStartTime = SwirlEndTime;
+int ReflexLensEndTime = ReflexLensStartTime + 100;
+int FocusOnWallStartTime = ReflexLensEndTime;
+int FocusOnWallEndTime = FocusOnWallStartTime + 100;
 
 void updateAnimation()
 {
@@ -544,73 +584,112 @@ void updateAnimation()
 		cameraPosition = glm::vec3(0.0f, 0.0f, 18.0f);
 		cameraOrientation = glm::mat3(1.0f);
 	}
-	if (animationTick >= 0 && animationTick < 120)
+	if (animationTick >= ZoomInStartTime && animationTick < ZoomInEndTime)
 	{
-		cameraPosition.z -= 0.1;
+		cameraPosition.z -= 0.025;
 	}
-	if (animationTick >= 120 && animationTick < 150)
+	if (animationTick >= ZoomOutStartTime && animationTick < ZoomOutEndTime)
 	{
-		cameraPosition.z += 0.1;
+		cameraPosition.z += 0.025;
 	}
-	if (animationTick >= 150 && animationTick < 180)
+	if (animationTick >= BounceStartTime && animationTick < BounceEndTime)
 	{
-		cameraPosition.z -= 0.1;
+		cameraPosition.z -= 0.025;
 	}
-	if (animationTick >= 180 && animationTick < 185)
+	if (animationTick >= WireFrameHoldStartTime && animationTick < WireFrameHoldEndTime)
+	{
+		WireframeBool = true;
+	}
+	if (animationTick >= WireFrameEndTime && animationTick < WireFrameBuffer)
 	{
 		WireframeBool = false;
 	}
-	if (animationTick >= 215 && animationTick < 220)
+	if (animationTick >= OrbitStartTime && animationTick < OrbitBuffer)
 	{
 		cameraPosition = glm::vec3(0.0f, 0.0f, 6.0f);
-		isOrbiting = 0.5f;		// Start orbiting clockwise
+		isOrbiting = 0.25f;		// Start orbiting clockwise
 		isLookAtEnabled = true; // Enable LookAt
 	}
-	if (animationTick >= 950 && animationTick < 1160)
+	if (animationTick >= OrbitEndTime && animationTick < OrbitBuffer2)
 	{
 		isOrbiting = 0;
 		cameraPosition = glm::vec3(0.0f, 0.0f, 6.0f);
 	}
-	if (animationTick >= 1160 && animationTick < 1260)
+	if (animationTick >= PanStartTime && animationTick < PanEndTime)
 	{
 		// currentRenderer = &rayTracedRenderer;
 		isLookAtEnabled = false; // Disable LookAt
-		panCamera(cameraOrientation, 0.07f);
+		panCamera(cameraOrientation, 0.035f);
 	}
-	if (animationTick >= 1360 && animationTick < 1460)
+	if (animationTick >= PanBackStartTime && animationTick < PanBackEndTime)
 	{
 		// currentRenderer = &rayTracedRenderer;
-		panCamera(cameraOrientation, -0.07f);
+		panCamera(cameraOrientation, -0.035f);
 	}
-	if (animationTick >= 1500 && animationTick < 1560)
+	if (animationTick >= GouraudStartTime && animationTick < GouraudEndTime)
 	{
 		// currentRenderer = &rayTracedRenderer;
 		GouraudShadingEnabled = true;
-		cameraPosition.z -= 0.01;
+		cameraPosition.z -= 0.005;
 	}
-	if (animationTick >= 1560 && animationTick < 1620)
+	if (animationTick >= PhongStartTime && animationTick < PhongEndTime)
 	{
 		// currentRenderer = &rayTracedRenderer;
 		PhongShadingEnabled = true;
 		GouraudShadingEnabled = false;
 	}
-	if (animationTick >= 1620 && animationTick < 1740)
+	if (animationTick >= softShadowsStartTime && animationTick < softShadowsEndTime)
 	{
 		// currentRenderer = &rayTracedRenderer;
-		PhongShadingEnabled = false;
+		PhongShadingEnabled = true;
 		GouraudShadingEnabled = false;
 		softShadowsEnabled = true;
 	}
-	if (animationTick >= 1740 && animationTick < 1800)
+	if (animationTick >= PanBack2StartTime && animationTick < PanBack2EndTime)
 	{
 		// currentRenderer = &rayTracedRenderer;
 		softShadowsEnabled = false;
-		panCamera(cameraOrientation, 0.08f);
+		panCamera(cameraOrientation, 0.02f);
 	}
-	if (animationTick >= 1800 && animationTick < 1820)
+	if (animationTick >= ZoomInStartTime2 && animationTick < ZoomInEndTime2)
 	{
 		// currentRenderer = &rayTracedRenderer;
-		cameraPosition.z -= 0.1;
+		cameraPosition.z -= 0.005;
+	}
+	if (animationTick >= ZoomOutStartTime2 && animationTick < ZoomOutEndTime2)
+	{
+		// currentRenderer = &rayTracedRenderer;
+		cameraPosition.z += 0.005;
+	}
+	if (animationTick >= unPanCameraStartTime && animationTick < unPanCameraEndTime)
+	{
+		// currentRenderer = &rayTracedRenderer;
+		panCamera(cameraOrientation, -0.02f);
+	}
+	if (animationTick >= DepthOfFieldStartTime && animationTick < DepthOfFieldEndTime)
+	{
+		// currentRenderer = &rayTracedRenderer;
+		depthOfFieldEnabled = true;
+		rayTracedRenderer.focusOnPixel(411, 151);
+	}
+	if (animationTick >= SwirlStartTime && animationTick < SwirlEndTime)
+	{
+		// currentRenderer = &rayTracedRenderer;
+		swirlEnabled = true;
+		rayTracedRenderer.focusOnPixel(273, 293);
+	}
+	if (animationTick >= ReflexLensStartTime && animationTick < ReflexLensEndTime)
+	{
+		// currentRenderer = &rayTracedRenderer;
+		swirlEnabled = false;
+		reflexLensEnabled = true;
+		rayTracedRenderer.focusOnPixel(375, 365);
+	}
+	if (animationTick >= FocusOnWallStartTime && animationTick < FocusOnWallEndTime)
+	{
+		// currentRenderer = &rayTracedRenderer;
+		reflexLensEnabled = false;
+		rayTracedRenderer.focusOnPixel(313, 231);
 	}
 
 	animationTick++;
