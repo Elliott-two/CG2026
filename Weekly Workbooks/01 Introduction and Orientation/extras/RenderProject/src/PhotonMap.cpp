@@ -20,7 +20,6 @@ void PhotonMap::buildKDTree(int depth, int start, int end)
 
 void PhotonMap::build()
 {
-    photons.reserve(photons.size());
     buildKDTree(0, 0, photons.size());
     isBuilt = true;
 }
@@ -47,13 +46,13 @@ void PhotonMap::findNearestPhotonsRecursive(int start, int end, int depth, const
     {
         return;
     }
-    int mid = (start + end) / 2.0f;
+    int mid = (start + end) / 2;
 
     const Photon &medianPhoton = photons[mid];
 
     glm::vec3 photonPosition = medianPhoton.position;
-    float distance = glm::length(photonPosition - point);
-    float distanceSquared = glm::dot(distance, distance);
+    glm::vec3 offset = photonPosition - point;
+    float distanceSquared = glm::dot(offset, offset);
 
     if (distanceSquared <= radiusSquared)
     {
@@ -66,7 +65,7 @@ void PhotonMap::findNearestPhotonsRecursive(int start, int end, int depth, const
 
     if (diff < 0)
     {
-        findNearestPhotonsRecursive(start, (start + end) / 2 - 1, depth + 1, point, radiusSquared, found);
+        findNearestPhotonsRecursive(start, (start + end) / 2, depth + 1, point, radiusSquared, found);
         if (diff * diff <= radiusSquared)
         {
             findNearestPhotonsRecursive((start + end) / 2 + 1, end, depth + 1, point, radiusSquared, found);
@@ -80,7 +79,7 @@ void PhotonMap::findNearestPhotonsRecursive(int start, int end, int depth, const
             findNearestPhotonsRecursive(start, (start + end) / 2 - 1, depth + 1, point, radiusSquared, found);
         }
     }
-};
+}
 
 void PhotonMap::findNearestPhotons(const glm::vec3 &position, float radius, std::vector<const Photon *> &nearestPhotons) const
 {
