@@ -2,25 +2,45 @@
 #include <random>
 
 // Get all the needed external variables and vectors
+
+// Width and Height of the screen
 extern const int WIDTH;
 extern const int HEIGHT;
+
+// Vector of all the triangles
 extern std::vector<ModelTriangle> triangles;
+
+// Initialised empty vector of non-culled triangles
 extern std::vector<ModelTriangle> nonCulledTriangles;
+
+// Camera position and orientation
 extern glm::vec3 cameraPosition;
 extern glm::mat3 cameraOrientation;
 
+// Focal length and distance for depth of field calculations
 extern float focalLength;
 extern float focalDistance;
+
+// Lense size and rays per pixel for depth of field calculations
 extern float lenseSize;
 extern int raysPerPixel;
 
+// Position of the light source
 extern glm::vec3 lightPosition;
+
+// Vector of vertex normals for each triangle
 extern std::vector<std::array<glm::vec3, 3>> vertexNormalsByTriangle;
+
+// Vector of all the texture maps
 extern std::vector<TextureMap> textures;
+
+// Map of the enviornment texture
 extern TextureMap environmentMap;
 
+// Bool to check if we want to force a redraw of the ray traced image
 extern bool forceRayTraceRedraw;
 
+// Bool to check if a new frame has been rendered
 extern bool newFrameRendered;
 
 // Bools to check whether we want Gouraud or Phong shading
@@ -29,25 +49,41 @@ extern bool PhongShadingEnabled;
 
 // Flag to enable/disable world mirroring
 extern bool worldMirroringEnabled;
+
+// Flag to enable/disable world refractive materials
 extern bool worldRefractiveEnabled;
+
+// Flag to enable/disable world metallic materials
 extern bool worldMetallicEnabled;
 
+// Flag to enable/disable environment mapping
 extern bool environmentMapEnabled;
+
+// Flag to check if the environment map is seen by the camera
 extern bool environmentMapSeenByCamera;
 
+// Flag to enable/disable photon mapping
 extern bool photonMappingEnabled;
+
+// Flag to enable/disable photon debugging
 extern bool photonDebuggingEnabled;
 
+// Flag to control the time of the water
 extern float waterTime;
 
 // Flag to enable/disable depth of field effect
 extern bool depthOfFieldEnabled;
+
 // Flag to enable/disable swirl effect
 extern bool swirlEnabled;
+
 // Flag to enable/disable reflex lens effect
 extern bool reflexLensEnabled;
 
+// Flag to enable/disable soft shadows
 extern bool softShadowsEnabled;
+
+// Position of the light source and min/max values for light calculations
 extern glm::vec3 lightMin;
 extern glm::vec3 lightMax;
 
@@ -57,21 +93,24 @@ extern bool isBlueBoxShowing;
 extern bool isRedBoxShowing;
 
 // All of my preset needed things
-constexpr float PI = 3.14159265358979323846f;
-constexpr float IMAGE_SCALE = 500.0f;
-constexpr float LIGHT_INTENSITY = 10.0f;
-constexpr float AMBIENT = 0.25f;
-constexpr float AMBIENT_METAL = 0.05f;
-constexpr int SPECULAR_EXPONENT_LOG2 = 5;
-constexpr float REFLEX_RADIUS = 0.5f;
-constexpr float SWIRL_FACTOR = 4.0f;
-constexpr int SHADOW_GRID = 2;
-constexpr int MAX_REFRACTION_RECURSION_DEPTH = 6;
-constexpr int NUMBER_OF_PHOTONS = 250000;
-constexpr int MAX_PHOTON_RECURSION_DEPTH = 8;
-constexpr float CAUSTIC_RADIUS = 0.04f;
-constexpr float GLOBAL_RADIUS = 0.16f;
-constexpr float INDIRECT_STRENGTH = 0.8f;
+constexpr float PI = 3.14159265358979323846f;          // PI
+constexpr float IMAGE_SCALE = 500.0f;                  // Scale for the image plane
+constexpr float LIGHT_INTENSITY = 20.0f;               // Intensity of the light source
+constexpr float AMBIENT = 0.25f;                       // Ambient light intensity
+constexpr float AMBIENT_METAL = 0.05f;                 // Ambient light intensity for metallic surfaces
+constexpr int SPECULAR_EXPONENT_LOG2 = 5;              // Log2 of the specular exponent for Phong shading
+constexpr float REFLEX_RADIUS = 0.5f;                  // Radius for the reflex lens effect
+constexpr float SWIRL_FACTOR = 4.0f;                   // Factor for the swirl effect
+constexpr int SHADOW_GRID = 2;                         // Grid size for soft shadows
+constexpr int MAX_REFRACTION_RECURSION_DEPTH = 6;      // Maximum recursion depth for refraction rays
+constexpr int NUMBER_OF_PHOTONS = 250000;              // Number of photons to trace for photon mapping
+constexpr int MAX_PHOTON_RECURSION_DEPTH = 8;          // Maximum recursion depth for photon tracing
+constexpr float CAUSTIC_RADIUS = 0.04f;                // Radius for caustic photon gathering
+constexpr float GLOBAL_RADIUS = 0.16f;                 // Radius for global photon gathering
+constexpr float INDIRECT_STRENGTH = 0.40f;             // Strength of indirect lighting from photon mapping
+constexpr uint32_t CAUSTIC_PHOTON_COLOUR = 0xFFFF00FF; // Colour for caustic photons in debugging mode (magenta)
+constexpr uint32_t GLOBAL_PHOTON_COLOUR = 0xFF00FFFF;  // Colour for global photons in debugging mode (cyan)
+constexpr float SURFACE_OFFSET = 0.001f;               // Offset to avoid self-intersection when tracing rays from surfaces
 
 // Thread-local storage for the view origin, which is used in depth of field calculations
 static thread_local glm::vec3 viewOrigin(0.0f);
@@ -80,6 +119,7 @@ static std::vector<int> visibleToOriginalIndex;
 // If I need a random float
 static float randomFloat()
 {
+    // Use thread-local random number generator to avoid contention in multi-threaded environments
     thread_local std::mt19937 gen(std::random_device{}());
     thread_local std::uniform_real_distribution<float> dist(0.0f, 1.0f);
     return dist(gen);
@@ -119,6 +159,7 @@ static bool intersectTriangle(const ModelTriangle &triangle, const glm::vec3 &or
     return triangleDistance > 0.0f;
 }
 
+// Struct to hold information about a triangle hit by a shadow ray
 struct hitShadow
 {
     float distance;
@@ -128,7 +169,7 @@ struct hitShadow
 static glm::vec3 computeBeerLambertTransmission(const glm::vec3 &absorption, float distance)
 {
 
-    // Calculate the transmission for each color channel using the Beer-Lambert law
+    // Calculate the transmission for each colour channel using the Beer-Lambert law
     return glm::vec3(
         std::exp(-absorption.x * distance),
         std::exp(-absorption.y * distance),
@@ -159,42 +200,51 @@ static glm::vec3 howOccluded(const glm::vec3 &origin, const glm::vec3 &direction
     if (hits.empty())
         return glm::vec3(1.0f); // Not occluded
 
-    std::sort(hits.begin(), hits.end(), [](const hitShadow &a, const hitShadow &b)
-              { return a.distance < b.distance; });
+    // Sort the hits by distance and remove duplicates based on object name and distance
+    std::sort(hits.begin(), hits.end(), [](const hitShadow &shadowA, const hitShadow &shadowB)
+              { return shadowA.distance < shadowB.distance; });
 
+    // Remove duplicates based on object name and distance
     size_t uniqueCount = 0;
-    for (size_t i = 0; i < hits.size(); ++i)
+    for (size_t index = 0; index < hits.size(); index++)
     {
+        // Skip duplicate triangles
         if (uniqueCount > 0 &&
-            hits[uniqueCount - 1].triangle->objectName == hits[i].triangle->objectName &&
-            std::abs(hits[i].distance - hits[uniqueCount - 1].distance) < 1e-4f)
+            hits[uniqueCount - 1].triangle->objectName == hits[index].triangle->objectName &&
+            std::abs(hits[index].distance - hits[uniqueCount - 1].distance) < 1e-4f)
         {
             continue;
         }
-        hits[uniqueCount++] = hits[i];
+        hits[uniqueCount++] = hits[index];
     }
+    // Resize the hits vector to contain only unique hits
     hits.resize(uniqueCount);
 
+    // Calculate the transmission through the refractive triangles using the Beer-Lambert law
     glm::vec3 transmission(1.0f);
 
-    for (size_t i = 0; i < hits.size();)
+    // Loop through the hits and calculate the transmission through each refractive triangle
+    for (size_t index = 0; index < hits.size();)
     {
-        const bool entering = glm::dot(direction, hits[i].triangle->normal) < 0.0f;
+        // Check if the ray is entering or exiting the refractive triangle based on the dot product of the ray direction and the triangle normal
+        const bool entering = glm::dot(direction, hits[index].triangle->normal) < 0.0f;
 
+        // If the ray is exiting, calculate the transmission through the triangle using the Beer-Lambert law and continue to the next hit
         if (!entering)
         {
-            transmission *= computeBeerLambertTransmission(hits[i].triangle->absorption, hits[i].distance);
-            i += 1;
+            transmission *= computeBeerLambertTransmission(hits[index].triangle->absorption, hits[index].distance);
+            index += 1;
             continue;
         }
 
-        float entryDistance = hits[i].distance;
+        // Entry and exit distances for the refractive triangle, and the index of the next hit to process
+        float entryDistance = hits[index].distance;
         float exitDistance = maxDistance;
-        size_t nextIndex = i + 1;
+        size_t nextIndex = index + 1;
 
-        for (size_t j = i + 1; j < hits.size(); ++j)
+        for (size_t j = index + 1; j < hits.size(); j++)
         {
-            if (hits[j].triangle->objectName == hits[i].triangle->objectName)
+            if (hits[j].triangle->objectName == hits[index].triangle->objectName)
             {
                 exitDistance = hits[j].distance;
                 nextIndex = j + 1;
@@ -202,19 +252,20 @@ static glm::vec3 howOccluded(const glm::vec3 &origin, const glm::vec3 &direction
             }
         }
 
+        // Calculate the thickness of the refractive triangle and update the transmission using the Beer-Lambert law
         float thickness = std::max(0.0f, exitDistance - entryDistance);
-        transmission *= computeBeerLambertTransmission(hits[i].triangle->absorption, thickness);
-        i = nextIndex;
+        transmission *= computeBeerLambertTransmission(hits[index].triangle->absorption, thickness);
+        index = nextIndex;
     }
 
     return transmission;
 }
 // Calculate the specular power for a given value using repeated squaring
-static float specularPower(float x) //
+static float specularPower(float specularPowerValue) //
 {
-    for (int i = 0; i < SPECULAR_EXPONENT_LOG2; ++i)
-        x *= x;
-    return x;
+    for (int index = 0; index < SPECULAR_EXPONENT_LOG2; index++)
+        specularPowerValue *= specularPowerValue;
+    return specularPowerValue;
 }
 
 // Use MATHS?!?
@@ -233,12 +284,14 @@ static std::vector<glm::vec3> sampleLight(const glm::vec3 &origin, const glm::ve
     // Calculate the direction from the shading point to the light source
     glm::vec3 toLight = target - origin;
 
+    // Calculate the squared distance to the light source and check if it's too close to avoid division by zero
     const float distanceSquared = glm::dot(toLight, toLight);
     if (distanceSquared < 1e-12f)
         return std::vector<glm::vec3>{diffuse, specular};
 
     float distance = std::sqrt(distanceSquared);
 
+    // Check if the distance is zero to avoid division by zero
     if (distance == 0.0f)
         return std::vector<glm::vec3>{diffuse, specular}; // Avoid division by zero
 
@@ -263,8 +316,10 @@ static std::vector<glm::vec3> sampleLight(const glm::vec3 &origin, const glm::ve
     // Given formula
     glm::vec3 reflected = (2.0f * incidentAngle * shadingNormal) - lightDir;
 
+    // Calculate the specular contribution using the Phong reflection model and the specular power function
     float specularContribution = 0.5f * specularPower(std::max(glm::dot(reflected, viewDir), 0.0f));
 
+    // Calculate the final diffuse and specular contributions by multiplying with the transmission factor
     diffuse = transmission * diffuseContribution;
     specular = transmission * specularContribution;
 
@@ -280,30 +335,37 @@ void RayTracedRenderer::draw(DrawingWindow &window)
     static bool frameRendered = false;
 
     // Read the current mode each frame so changes made by MainApplication are observed.
-    const int shadingMode = GouraudShadingEnabled ? 1
-                            : PhongShadingEnabled ? 2
-                                                  : 0; // 1 for Gouraud, 2 for Phong, 0 for flat
+    int shadingMode = 0; // 1 for Gouraud, 2 for Phong, 0 for flat
+    if (GouraudShadingEnabled)
+    {
+        shadingMode = 1;
+    }
+    else if (PhongShadingEnabled)
+    {
+        shadingMode = 2;
+    }
 
-    // Bools and ints to check if the shading mode or visibility of objects has changed since the last frame
-    static int prevShadingMode = shadingMode;
-    static bool prevSphereShowing = isSphereShowing;
-    static bool prevBlueBoxShowing = isBlueBoxShowing;
-    static bool prevRedBoxShowing = isRedBoxShowing;
-    static bool prevWorldMirroringEnabled = worldMirroringEnabled;
-    static bool prevDepthOfFieldEnabled = depthOfFieldEnabled;
-    static float prevFocalDistance = focalDistance;
-    static bool prevSwirlEnabled = swirlEnabled;
-    static bool prevReflexLensEnabled = reflexLensEnabled;
-    static bool prevSoftShadowsEnabled = softShadowsEnabled;
-    static bool prevWorldRefractiveEnabled = worldRefractiveEnabled;
-    static bool prevWorldMetallicEnabled = worldMetallicEnabled;
-    static bool prevEnvironmentMapEnabled = environmentMapEnabled;
-    static bool prevEnvironmentMapSeenByCamera = environmentMapSeenByCamera;
-    static bool prevPhotonMappingEnabled = photonMappingEnabled;
-    static bool prevPhotonDebuggingEnabled = photonDebuggingEnabled;
+    // Bools and ints to check if anything has changed
+    static int prevShadingMode = shadingMode;                                // Previous shading mode
+    static bool prevSphereShowing = isSphereShowing;                         // Previous sphere showing state
+    static bool prevBlueBoxShowing = isBlueBoxShowing;                       // Previous blue box showing state
+    static bool prevRedBoxShowing = isRedBoxShowing;                         // Previous red box showing state
+    static bool prevWorldMirroringEnabled = worldMirroringEnabled;           // Previous world mirroring state
+    static bool prevDepthOfFieldEnabled = depthOfFieldEnabled;               // Previous depth of field state
+    static float prevFocalDistance = focalDistance;                          // Previous focal distance
+    static bool prevSwirlEnabled = swirlEnabled;                             // Previous swirl effect state
+    static bool prevReflexLensEnabled = reflexLensEnabled;                   // Previous reflex lens effect state
+    static bool prevSoftShadowsEnabled = softShadowsEnabled;                 // Previous soft shadows state
+    static bool prevWorldRefractiveEnabled = worldRefractiveEnabled;         // Previous world refractive state
+    static bool prevWorldMetallicEnabled = worldMetallicEnabled;             // Previous world metallic state
+    static bool prevEnvironmentMapEnabled = environmentMapEnabled;           // Previous environment map state
+    static bool prevEnvironmentMapSeenByCamera = environmentMapSeenByCamera; // Previous environment map seen by camera state
+    static bool prevPhotonMappingEnabled = photonMappingEnabled;             // Previous photon mapping state
+    static bool prevPhotonDebuggingEnabled = photonDebuggingEnabled;         // Previous photon debugging state
 
-    static bool photonMapChanged = true;
+    static bool photonMapChanged = true; // Flag to indicate if the photon map has changed and needs to be rebuilt
 
+    // Check if any relevant state has changed since the last frame
     bool changed = (prevShadingMode != shadingMode) ||
                    (prevSphereShowing != isSphereShowing) ||
                    (prevBlueBoxShowing != isBlueBoxShowing) ||
@@ -321,6 +383,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
                    (prevPhotonMappingEnabled != photonMappingEnabled) ||
                    (prevPhotonDebuggingEnabled != photonDebuggingEnabled);
 
+    // Bools relating to lighting and photon mapping changes
     bool lightPathsChanged = (prevSphereShowing != isSphereShowing) ||
                              (prevBlueBoxShowing != isBlueBoxShowing) ||
                              (prevRedBoxShowing != isRedBoxShowing) ||
@@ -364,28 +427,31 @@ void RayTracedRenderer::draw(DrawingWindow &window)
         return;
     }
 
+    // Clear the non-culled triangles and visible-to-original index vectors
     nonCulledTriangles.clear();
     visibleToOriginalIndex.clear();
-    for (size_t i = 0; i < triangles.size(); ++i)
+    // Populate the non-culled triangles and visible-to-original index vectors based on the current visibility settings
+    for (size_t index = 0; index < triangles.size(); index++)
     {
-        const ModelTriangle &triangle = triangles[i];
+        const ModelTriangle &triangle = triangles[index];
         if ((triangle.objectName == "sphere" && !isSphereShowing) ||
             (triangle.objectName == "tall_box" && !isBlueBoxShowing) ||
             (triangle.objectName == "short_box" && !isRedBoxShowing))
             continue;
         nonCulledTriangles.push_back(triangle);
-        visibleToOriginalIndex.push_back(static_cast<int>(i));
+        visibleToOriginalIndex.push_back(static_cast<int>(index));
     }
 
+    // If photon mapping is enabled and the photon map has changed, rebuild the photon maps
     if (photonMappingEnabled && photonMapChanged)
     {
         buildPhotonMaps();
         photonMapChanged = false;
     }
 
-    for (int x = 0; x < WIDTH; ++x)
+    for (int x = 0; x < WIDTH; x++)
     {
-        for (int y = 0; y < HEIGHT; ++y)
+        for (int y = 0; y < HEIGHT; y++)
         {
             // Calculate the direction of the ray from the camera through the pixel
             float u = (x + 0.5f - WIDTH / 2.0f) / (IMAGE_SCALE * focalLength);
@@ -415,13 +481,18 @@ void RayTracedRenderer::draw(DrawingWindow &window)
         }
     }
 
+    // If photon debugging is enabled and photon mapping is enabled, render the photon maps for debugging purposes
     if (photonDebuggingEnabled && photonMappingEnabled)
     {
+        // Clear the window pixels before rendering the photon maps
         window.clearPixels();
-        const PhotonMap *photonMaps[] = {&causticPhotonMap, &globalPhotonMap};
-        const uint32_t photonColours[] = {0xFFFFFF00, 0xFF00FFFF};
 
-        for (int mapIndex = 0; mapIndex < 2; ++mapIndex)
+        // Define an array of pointers to the photon maps and their corresponding colours for rendering
+        const PhotonMap *photonMaps[] = {&causticPhotonMap, &globalPhotonMap};
+        const uint32_t photonColours[] = {CAUSTIC_PHOTON_COLOUR, GLOBAL_PHOTON_COLOUR};
+
+        // Loop through each photon map and render the photons onto the window
+        for (int mapIndex = 0; mapIndex < 2; mapIndex++)
         {
             for (const Photon &photon : photonMaps[mapIndex]->allPhotons())
             {
@@ -470,7 +541,7 @@ Colour RayTracedRenderer::shadingHelper(RayTriangleIntersection intersection)
     // Determine the shading method based on the enabled flags
     if (GouraudShadingEnabled)
     {
-        // Gouraud shading: Calculate light at vertices, then interpolate vertex colors using barycentric coordinates
+        // Gouraud shading: Calculate light at vertices, then interpolate vertex colours using barycentric coordinates
         pixelColour = baryentricColourWeights(shaded, gourandShading(shaded));
     }
     else if (PhongShadingEnabled)
@@ -499,7 +570,7 @@ RayTriangleIntersection RayTracedRenderer::getClosestValidIntersection(glm::vec3
     int bestIndex = -1;
 
     // Iterate through all non-culled triangles to find the closest intersection
-    for (size_t index = 0; index < nonCulledTriangles.size(); ++index)
+    for (size_t index = 0; index < nonCulledTriangles.size(); index++)
     {
         // Calculate the distance to the intersection point if the ray intersects with the triangle
         float triangleDistance;
@@ -539,11 +610,11 @@ static std::vector<glm::vec3> sampleAreaLight(const glm::vec3 &origin, const glm
 {
     std::vector<glm::vec3> lightSamples(2, glm::vec3(0.0f));
     std::vector<glm::vec3> total(2, glm::vec3(0.0f));
-    for (int i = 0; i < SHADOW_GRID; ++i)
+    for (int index = 0; index < SHADOW_GRID; index++)
     {
-        for (int j = 0; j < SHADOW_GRID; ++j)
+        for (int j = 0; j < SHADOW_GRID; j++)
         {
-            lightSamples = sampleLight(origin, normal, viewDir, jitteredLightPoint(i, j));
+            lightSamples = sampleLight(origin, normal, viewDir, jitteredLightPoint(index, j));
             total[0] += lightSamples[0];
             total[1] += lightSamples[1];
         }
@@ -568,8 +639,14 @@ Colour RayTracedRenderer::calculateLighting(glm::vec3 point, glm::vec3 normal, C
     const bool useAreaLight = softShadowsEnabled && lightMin != lightMax;
     std::vector<glm::vec3> total(2, glm::vec3(0.0f));
 
-    total = useAreaLight ? sampleAreaLight(origin, normalForShading, viewDir)
-                         : sampleLight(origin, normalForShading, viewDir, lightPosition);
+    if (useAreaLight)
+    {
+        total = sampleAreaLight(origin, normalForShading, viewDir);
+    }
+    else
+    {
+        total = sampleLight(origin, normalForShading, viewDir, lightPosition);
+    }
 
     if (photonMappingEnabled)
     {
@@ -616,8 +693,8 @@ std::array<Colour, 3> RayTracedRenderer::gourandShading(RayTriangleIntersection 
 
     // Light each vertex using its smooth normal
     std::array<Colour, 3> colours;
-    for (int i = 0; i < 3; ++i)
-        colours[i] = calculateLighting(triangle.vertices[i], normals[i], triangle.colour, triangle.normal);
+    for (int index = 0; index < 3; index++)
+        colours[index] = calculateLighting(triangle.vertices[index], normals[index], triangle.colour, triangle.normal);
     return colours;
 }
 
@@ -672,7 +749,11 @@ Colour RayTracedRenderer::phongShading(const RayTriangleIntersection &intersecti
 
     // Interpolate the normal, then renormalise (interpolated normals are shorter than 1)
     glm::vec3 interpolated = weights.x * normals[0] + weights.y * normals[1] + weights.z * normals[2];
-    glm::vec3 normal = (glm::length(interpolated) > 1e-6f) ? glm::normalize(interpolated) : triangleNormal;
+    glm::vec3 normal = triangleNormal;
+    if (glm::length(interpolated) > 1e-6f)
+    {
+        normal = glm::normalize(interpolated);
+    }
 
     // Light the actual hit point with the interpolated normal
     return calculateLighting(intersection.intersectionPoint, normal, colour, triangleNormal);
@@ -800,14 +881,22 @@ Colour RayTracedRenderer::depthOfFieldShading(float u, float v, const glm::vec3 
     float blueTotal = 0.0f;
 
     // Loop through the number of rays per pixel to simulate depth of field
-    for (int i = 0; i < raysPerPixel; ++i)
+    for (int index = 0; index < raysPerPixel; index++)
     {
         // Generate a random offset in the lens plane, using swirl effect if enabled
-        glm::vec2 randomOffset = swirlEnabled
-                                     ? randomPointInCircleSwirl(lenseSize, u, v, SWIRL_FACTOR) // Swirl factor that looks nice
-                                 : reflexLensEnabled
-                                     ? randomPointInReflexLens(lenseSize, REFLEX_RADIUS) // Inner ratio that looks nice
-                                     : randomPointInCircle(lenseSize);
+        glm::vec2 randomOffset;
+        if (swirlEnabled)
+        {
+            randomOffset = randomPointInCircleSwirl(lenseSize, u, v, SWIRL_FACTOR);
+        }
+        else if (reflexLensEnabled)
+        {
+            randomOffset = randomPointInReflexLens(lenseSize, REFLEX_RADIUS);
+        }
+        else
+        {
+            randomOffset = randomPointInCircle(lenseSize);
+        }
 
         // New camera position based on the random offset in the lens plane
         // This line was given by Intellisense
@@ -891,7 +980,7 @@ static glm::vec3 fresnelSchlickMetallic(float cosTheta, const glm::vec3 &f0)
 // Attenuate the colour based on the absorption coefficients and distance traveled through the medium
 static Colour attenuateColour(const Colour &colour, const glm::vec3 &absorption, float distance, const Colour &scatter = Colour(0, 0, 0))
 {
-    // Calculate the transmission for each color channel using the Beer-Lambert law
+    // Calculate the transmission for each colour channel using the Beer-Lambert law
     glm::vec3 transmission = computeBeerLambertTransmission(absorption, distance);
 
     // Return the attenuated colour by multiplying the original colour by the transmission and clamping the values to a maximum of 255
@@ -965,7 +1054,7 @@ Colour RayTracedRenderer::mirrorredRay(const RayTriangleIntersection &intersecti
     glm::vec3 reflectedDirection = glm::normalize(direction - 2.0f * glm::dot(direction, triangle.normal) * triangle.normal);
     // Trace the reflected ray recursively, offsetting the starting point slightly to avoid self-intersection
     Colour reflectedColour = traceRay(
-        intersection.intersectionPoint + reflectedDirection * 0.001f,
+        intersection.intersectionPoint + reflectedDirection * SURFACE_OFFSET,
         reflectedDirection,
         depth + 1,
         mediumAbsorption,
@@ -1037,28 +1126,39 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
     std::mt19937 generator(seed);
     std::uniform_real_distribution<float> localDistribution(0.0f, 1.0f);
 
-    glm::vec3 helperUp = (std::abs(reflectedDirection.y) > 0.999f)
-                             ? glm::vec3(0.0f, 0.0f, 1.0f)
-                             : glm::vec3(0.0f, 1.0f, 0.0f);
+    glm::vec3 helperUp = glm::vec3(0.0f, 1.0f, 0.0f);
+    if (std::abs(reflectedDirection.y) > 0.999f)
+    {
+        helperUp = glm::vec3(0.0f, 0.0f, 1.0f);
+    }
 
     glm::vec3 tangent = glm::normalize(glm::cross(helperUp, reflectedDirection));
     glm::vec3 bitangent = glm::cross(reflectedDirection, tangent);
 
     const bool isRoughPrimary = (depth == 0 && triangle.roughness > 0.01f);
-    const int gridSize = isRoughPrimary ? 4 : 1;
-
-    const float stretchFactorX = (triangle.stretchFactor > 1.0f) ? 3.0f : 1.0f;
-    const float stretchFactorY = (triangle.stretchFactor > 1.0f) ? 0.5f : 1.0f;
-
-    for (int i = 0; i < gridSize; ++i)
+    int gridSize = 1;
+    if (isRoughPrimary)
     {
-        for (int j = 0; j < gridSize; ++j)
+        gridSize = 4;
+    }
+
+    float stretchFactorX = 1.0f;
+    float stretchFactorY = 1.0f;
+    if (triangle.stretchFactor > 1.0f)
+    {
+        stretchFactorX = 3.0f;
+        stretchFactorY = 0.5f;
+    }
+
+    for (int index = 0; index < gridSize; index++)
+    {
+        for (int j = 0; j < gridSize; j++)
         {
             glm::vec3 fuzzyDirection = reflectedDirection;
 
             if (isRoughPrimary)
             {
-                float u = (i + localDistribution(generator)) / static_cast<float>(gridSize);
+                float u = (index + localDistribution(generator)) / static_cast<float>(gridSize);
                 float v = (j + localDistribution(generator)) / static_cast<float>(gridSize);
 
                 glm::vec2 disk = squashGrid(u, v);
@@ -1074,7 +1174,7 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
             }
 
             Colour sampleColour = traceRay(
-                intersection.intersectionPoint + faceNormal * 0.001f,
+                intersection.intersectionPoint + faceNormal * SURFACE_OFFSET,
                 fuzzyDirection,
                 depth + 1,
                 mediumAbsorption,
@@ -1093,7 +1193,7 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
     if (validSamples == 0)
     {
         Colour sampleColour = traceRay(
-            intersection.intersectionPoint + faceNormal * 0.001f,
+            intersection.intersectionPoint + faceNormal * SURFACE_OFFSET,
             reflectedDirection,
             depth + 1,
             mediumAbsorption,
@@ -1146,18 +1246,31 @@ Colour RayTracedRenderer::refractedRay(const RayTriangleIntersection &intersecti
     glm::vec3 hitPoint = intersection.intersectionPoint;
 
     // Calculate the surface normal based on whether the triangle is water or not, using the waterNormal function for water surfaces
-    glm::vec3 surfaceNormal = triangle.isWater ? waterNormal(hitPoint, triangle.normal) : triangle.normal;
+    glm::vec3 surfaceNormal = triangle.normal;
+    if (triangle.isWater)
+    {
+        surfaceNormal = waterNormal(hitPoint, triangle.normal);
+    }
 
     // Determine the side of the surface normal based on the direction of the ray and the triangle's normal
-    float side = glm::dot(direction, triangle.normal) > 0.0f ? -1.0f : 1.0f;
+    float side = 1.0f;
+    if (glm::dot(direction, triangle.normal) > 0.0f)
+    {
+        side = -1.0f;
+    }
     // Calculate the flat normal and the actual normal for refraction calculations
     glm::vec3 flatNormal = side * triangle.normal;
     // Calculate the actual normal for refraction calculations, taking into account the side of the surface normal
     glm::vec3 normal = side * surfaceNormal;
 
     // Determine the indices of refraction for the entering and exiting media based on whether the ray is entering or exiting the triangle
-    float n1 = entering ? 1.0f : triangle.refractiveIndex;
-    float n2 = entering ? triangle.refractiveIndex : 1.0f;
+    float n1 = triangle.refractiveIndex;
+    float n2 = 1.0f;
+    if (entering)
+    {
+        n1 = 1.0f;
+        n2 = triangle.refractiveIndex;
+    }
 
     // Calculate the reflected direction using the reflection formula and normalize it
     glm::vec3 reflectedDirection = glm::normalize(direction - 2.0f * glm::dot(direction, normal) * normal);
@@ -1167,7 +1280,7 @@ Colour RayTracedRenderer::refractedRay(const RayTriangleIntersection &intersecti
         reflectedDirection = glm::normalize(reflectedDirection - 2.0f * glm::dot(reflectedDirection, flatNormal) * flatNormal);
 
     Colour reflectedColour = traceRay(
-        hitPoint + reflectedDirection * 0.001f,
+        hitPoint + reflectedDirection * SURFACE_OFFSET,
         reflectedDirection,
         depth + 1,
         mediumAbsorption,
@@ -1190,20 +1303,35 @@ Colour RayTracedRenderer::refractedRay(const RayTriangleIntersection &intersecti
     }
 
     // Calculate the colour inside the medium based on whether the triangle is water or not, using the triangle's colour for water surfaces
-    Colour insideScatter = triangle.isWater ? triangle.colour : Colour(0, 0, 0);
+    Colour insideScatter(0, 0, 0);
+    if (triangle.isWater)
+    {
+        insideScatter = triangle.colour;
+    }
 
     // Trace the refracted ray recursively, offsetting the starting point slightly to avoid self-intersection
+    glm::vec3 refractedAbsorption(0.0f);
+    Colour refractedScatter(0, 0, 0);
+    if (entering)
+    {
+        refractedAbsorption = triangle.absorption;
+        refractedScatter = insideScatter;
+    }
+
     Colour refractedColour = traceRay(
-        hitPoint + refractedDirection * 0.001f,
+        hitPoint + refractedDirection * SURFACE_OFFSET,
         refractedDirection,
         depth + 1,
-        entering ? triangle.absorption : glm::vec3(0.0f),
+        refractedAbsorption,
         entering,
-        entering ? insideScatter : Colour(0, 0, 0));
+        refractedScatter);
 
     // Calculate the Fresnel-Schlick factor based on the angle of incidence and the indices of refraction
-    float cosTheta = (n1 <= n2) ? glm::dot(-direction, normal)
-                                : -glm::dot(refractedDirection, normal);
+    float cosTheta = -glm::dot(refractedDirection, normal);
+    if (n1 <= n2)
+    {
+        cosTheta = glm::dot(-direction, normal);
+    }
     float fresnelSchlickFactor = fresnelSchlick(glm::clamp(cosTheta, 0.0f, 1.0f), n1, n2);
     float refractedFactor = 1.0f - fresnelSchlickFactor;
 
@@ -1254,7 +1382,11 @@ Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &dir
     const ModelTriangle &triangle = intersection.intersectedTriangle;
 
     // Calculate the distance traveled through the medium based on whether the ray is inside the medium or not
-    float distanceThroughMedium = insideMedium ? intersection.distanceFromCamera : 0.0f;
+    float distanceThroughMedium = 0.0f;
+    if (insideMedium)
+    {
+        distanceThroughMedium = intersection.distanceFromCamera;
+    }
 
     auto throughMedium = [&](const Colour &colour, const Colour &scatter)
     {
@@ -1319,7 +1451,7 @@ static glm::vec3 randomPointOnLight()
 {
     float randomX = randomFloat();
     float randomZ = randomFloat();
-    float y = lightMin.y - 0.001f;
+    float y = lightMin.y - SURFACE_OFFSET; // Slightly below the light source to avoid self-intersection
 
     float x = lightMin.x + randomX * (lightMax.x - lightMin.x);
     float z = lightMin.z + randomZ * (lightMax.z - lightMin.z);
@@ -1352,43 +1484,92 @@ static glm::vec3 randomHemisphereDirection(const glm::vec3 &normal)
     } while (glm::dot(direction, direction) > 1.0f || glm::dot(direction, direction) < 1e-8f);
 
     direction = glm::normalize(direction);
-    return glm::dot(direction, normal) < 0.0f ? -direction : direction;
+    if (glm::dot(direction, normal) < 0.0f)
+    {
+        return -direction;
+    }
+    return direction;
 }
 
-void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::vec3 power, bool insideMedium, bool viaSpecular, int depth, int diffuseDepth)
+void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::vec3 power, bool insideMedium, bool cameFromSpecular, int depth, int diffuseDepth)
 {
+    // If the recursion depth exceeds the maximum allowed depth, return to avoid infinite recursion
     if (depth >= MAX_PHOTON_RECURSION_DEPTH)
     {
         return;
     }
+    // Get the closest valid intersection for the photon ray
     RayTriangleIntersection intersection = getClosestValidIntersection(origin, direction);
 
+    // If no intersection is found or the intersection is behind the camera, return to avoid further processing
     if (intersection.distanceFromCamera <= 0)
     {
         return;
     }
+
+    // Assign the intersected triangle for further processing
     const ModelTriangle &triangle = intersection.intersectedTriangle;
 
+    // If the intersected triangle is a light source, return to avoid tracing photons from light sources
     if (triangle.objectName == "light")
     {
         return;
     }
 
+    // Handle different cases based on the properties of the intersected triangle
+
+    // Path for refractive or water
     if ((triangle.isRefractive || triangle.isWater) && worldRefractiveEnabled)
     {
+        // If the photon is in a medium
         if (insideMedium)
         {
+            // Attenuate the power of the photon based on the absorption coefficients and distance traveled through the medium
             power *= computeBeerLambertTransmission(triangle.absorption, intersection.distanceFromCamera);
         }
 
-        viaSpecular = true;
-        bool entering = !insideMedium;
-        glm::vec3 surfaceNormal = triangle.isWater ? waterNormal(intersection.intersectionPoint, triangle.normal) : triangle.normal;
+        // if the photon is coming from a specular surface, we need to handle the Fresnel effect and determine whether it reflects or refracts
+        cameFromSpecular = true;
 
-        float side = glm::dot(direction, triangle.normal) > 0.0f ? -1.0f : 1.0f;
+        // Determine if the photon is entering or exiting the medium based on the current state of insideMedium
+        bool entering = !insideMedium;
+
+        glm::vec3 surfaceNormal;
+
+        if (triangle.isWater)
+        {
+            waterNormal(intersection.intersectionPoint, triangle.normal);
+        }
+        else
+        {
+            surfaceNormal = triangle.normal;
+        }
+
+        float side;
+        if (glm::dot(direction, triangle.normal) > 0.0f)
+        {
+            side = -1.0f;
+        }
+        else
+        {
+            side = 1.0f;
+        }
+
         glm::vec3 normal = side * surfaceNormal;
 
-        float RandomChance = fresnelSchlick(glm::clamp(glm::dot(-direction, normal), 0.0f, 1.0f), entering ? 1.0f : triangle.refractiveIndex, entering ? triangle.refractiveIndex : 1.0f);
+        float cosTheta = glm::clamp(glm::dot(-direction, normal), 0.0f, 1.0f);
+        float RandomChance;
+
+        if (entering)
+        {
+            // Ray is entering the triangle (e.g., from air [1.0] into glass)
+            RandomChance = fresnelSchlick(cosTheta, 1.0f, triangle.refractiveIndex);
+        }
+        else
+        {
+            // Ray is exiting the triangle (e.g., from glass back into air [1.0])
+            RandomChance = fresnelSchlick(cosTheta, triangle.refractiveIndex, 1.0f);
+        }
 
         if (RandomChance > randomFloat())
         {
@@ -1396,7 +1577,13 @@ void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::
         }
         else
         {
-            if (refractRay(direction, normal, entering ? 1.0f / triangle.refractiveIndex : triangle.refractiveIndex, direction))
+            float indexOfRefraction = triangle.refractiveIndex;
+            if (entering)
+            {
+                indexOfRefraction = 1.0f / triangle.refractiveIndex;
+            }
+
+            if (refractRay(direction, normal, indexOfRefraction, direction))
             {
                 insideMedium = !insideMedium;
             }
@@ -1406,28 +1593,32 @@ void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::
             }
         }
 
-        tracePhoton(intersection.intersectionPoint + direction * 0.001f, direction, power, insideMedium, viaSpecular, depth + 1, diffuseDepth);
+        tracePhoton(intersection.intersectionPoint + direction * SURFACE_OFFSET, direction, power, insideMedium, cameFromSpecular, depth + 1, diffuseDepth);
         return;
     }
 
     if (triangle.isMirror && worldMirroringEnabled)
     {
-        viaSpecular = true;
+        cameFromSpecular = true;
         direction = glm::normalize(direction - 2.0f * glm::dot(direction, triangle.normal) * triangle.normal);
-        tracePhoton(intersection.intersectionPoint + direction * 0.001f, direction, power, insideMedium, viaSpecular, depth + 1, diffuseDepth);
+        tracePhoton(intersection.intersectionPoint + direction * SURFACE_OFFSET, direction, power, insideMedium, cameFromSpecular, depth + 1, diffuseDepth);
         return;
     }
 
     if (triangle.isMetallic && worldMetallicEnabled)
     {
-        viaSpecular = true;
+        cameFromSpecular = true;
 
         glm::vec3 fresnelTint = fresnelSchlickMetallic(glm::clamp(glm::dot(-direction, triangle.normal), 0.0f, 1.0f), triangle.fresnelReflectance);
         power *= fresnelTint;
-        float side = glm::dot(direction, triangle.normal) > 0.0f ? -1.0f : 1.0f;
+        float side = 1.0f;
+        if (glm::dot(direction, triangle.normal) > 0.0f)
+        {
+            side = -1.0f;
+        }
         glm::vec3 normal = side * triangle.normal;
         direction = glm::normalize(direction - 2.0f * glm::dot(direction, normal) * normal);
-        tracePhoton(intersection.intersectionPoint + direction * 0.001f, direction, power, insideMedium, viaSpecular, depth + 1, diffuseDepth);
+        tracePhoton(intersection.intersectionPoint + direction * SURFACE_OFFSET, direction, power, insideMedium, cameFromSpecular, depth + 1, diffuseDepth);
         return;
     }
 
@@ -1437,7 +1628,7 @@ void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::
         surfaceNormal = -surfaceNormal;
     }
 
-    if (diffuseDepth == 0 && viaSpecular)
+    if (diffuseDepth == 0 && cameFromSpecular)
     {
         causticPhotonMap.addPhoton({intersection.intersectionPoint, direction, power});
     }
@@ -1458,21 +1649,27 @@ void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::
 
     power *= 2.0f * glm::dot(newDirection, surfaceNormal);
 
-    tracePhoton(intersection.intersectionPoint + surfaceNormal * 0.001f, newDirection, power, false, false, depth + 1, diffuseDepth + 1);
+    tracePhoton(intersection.intersectionPoint + surfaceNormal * SURFACE_OFFSET, newDirection, power, false, false, depth + 1, diffuseDepth + 1);
 }
 
 void RayTracedRenderer::buildPhotonMaps()
 {
+    // Clear the two maps
     causticPhotonMap.clear();
     globalPhotonMap.clear();
-    for (int i = 0; i < NUMBER_OF_PHOTONS; ++i)
+
+    // Trace photons from the light source and store them in the photon maps
+    for (int index = 0; index < NUMBER_OF_PHOTONS; index++)
     {
+        // Trace a photon from a random point on the light source in a random downward direction
         tracePhoton(randomPointOnLight(), randomDownwardDirection(), glm::vec3(LIGHT_INTENSITY * 0.5f / NUMBER_OF_PHOTONS), false, false);
     }
 
+    // Build the two maps
     causticPhotonMap.build();
     globalPhotonMap.build();
 
+    // Print the number of photons in each photon map to the console for debugging purposes
     std::cout << "Caustic photon map built with " << causticPhotonMap.size() << " photons." << std::endl;
     std::cout << "Global photon map built with " << globalPhotonMap.size() << " photons." << std::endl;
 }

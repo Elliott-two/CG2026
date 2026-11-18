@@ -98,6 +98,7 @@ glm::vec3 PhotonMap::estimateIrradiance(const glm::vec3 &position, const glm::ve
 
     static thread_local std::vector<const Photon *> nearestPhotons;
     glm::vec3 irradiance(0.0f);
+    findNearestPhotons(position, radius, nearestPhotons);
     for (const Photon *photon : nearestPhotons)
     {
         if (glm::dot(photon->direction, normal) >= 0.0f)
