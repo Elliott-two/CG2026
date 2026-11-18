@@ -888,25 +888,13 @@ Colour RayTracedRenderer::mirrorredRay(const RayTriangleIntersection &intersecti
     return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium);
 }
 
-static glm::vec2 sampleConcentricDisk(float u, float v)
+static glm::vec2 squashGrid(float u, float v)
 {
-    float a = 2.0f * u - 1.0f;
-    float b = 2.0f * v - 1.0f;
-    if (a == 0.0f && b == 0.0f)
-        return glm::vec2(0.0f);
-
-    float r, theta;
-    if (std::abs(a) > std::abs(b))
-    {
-        r = a;
-        theta = (PI / 4.0f) * (b / a);
-    }
-    else
-    {
-        r = b;
-        theta = (PI / 2.0f) - (PI / 4.0f) * (a / b);
-    }
-    return glm::vec2(r * std::cos(theta), r * std::sin(theta));
+    float x = 2.0f * u - 1.0f;
+    float y = 2.0f * v - 1.0f;
+    return glm::vec2(
+        x * std::sqrt(std::max(0.0f, 1.0f - 0.5f * y * y)),
+        y * std::sqrt(std::max(0.0f, 1.0f - 0.5f * x * x)));
 }
 
 Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool insideMedium, const Colour &mediumScatter, float distanceThroughMedium)
@@ -971,7 +959,7 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
     glm::vec3 bitangent = glm::cross(reflectedDirection, tangent);
 
     const bool isRoughPrimary = (depth == 0 && triangle.roughness > 0.01f);
-    const int gridSize = isRoughPrimary ? 8 : 1;
+    const int gridSize = isRoughPrimary ? 4 : 1;
 
     const float stretchFactorX = (triangle.objectName == "Aluminium") ? 3.0f : 1.0f;
     const float stretchFactorY = (triangle.objectName == "Aluminium") ? 0.5f : 1.0f;
@@ -987,7 +975,7 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
                 float u = (i + localDistribution(generator)) / static_cast<float>(gridSize);
                 float v = (j + localDistribution(generator)) / static_cast<float>(gridSize);
 
-                glm::vec2 disk = sampleConcentricDisk(u, v);
+                glm::vec2 disk = squashGrid(u, v);
                 float dx = disk.x * triangle.roughness * stretchFactorX;
                 float dy = disk.y * triangle.roughness * stretchFactorY;
 

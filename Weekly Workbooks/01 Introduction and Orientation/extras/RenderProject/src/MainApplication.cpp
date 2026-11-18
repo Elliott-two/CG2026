@@ -8,6 +8,7 @@
 #include "RasterisedRenderer.h"
 #include "PointCloudRenderer.h"
 #include "RayTracedRenderer.h"
+#include "PhotonMap.h"
 #include <vector>
 #include <unistd.h>
 #include <iostream>
@@ -1061,6 +1062,16 @@ int main(int argc, char *argv[])
 		std::vector<ModelTriangle> parsedTriangles = triangleParseOBJ(
 			filennames[i] + ".obj", scalingFactor, translation, rotation);
 		triangles.insert(triangles.end(), parsedTriangles.begin(), parsedTriangles.end());
+	}
+
+	PhotonMap photonMap;
+	photonMap.build(10000);
+
+	std::vector<const Photon *> nearestPhotons;
+
+	for (int i = 0; i < 20; ++i)
+	{
+		photonMap.findNearestPhotons(glm::vec3(0.0f, 0.0f, 0.0f), 10, nearestPhotons);
 	}
 
 	// Clear the vector? Given by intellisense so im going to trust it
