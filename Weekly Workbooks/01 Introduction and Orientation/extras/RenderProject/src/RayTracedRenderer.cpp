@@ -470,8 +470,7 @@ static glm::vec3 jitteredLightPoint(int i, int j)
 
     const float alongX = (i + randomFloat()) / SHADOW_GRID;
     const float alongZ = (j + randomFloat()) / SHADOW_GRID;
-    return glm::vec3(glm::mix(lightMin.x, lightMax.x, alongX), lightMin.y,
-                     glm::mix(lightMin.z, lightMax.z, alongZ));
+    return glm::vec3(glm::mix(lightMin.x, lightMax.x, alongX), lightMin.y, glm::mix(lightMin.z, lightMax.z, alongZ));
 }
 
 static std::vector<glm::vec3> sampleAreaLight(const glm::vec3 &origin, const glm::vec3 &normal, const glm::vec3 &viewDir)
@@ -1227,4 +1226,90 @@ Colour RayTracedRenderer::enviornmentHelper(const glm::vec3 &direction)
 
     const uint32_t packed = environmentMap.pixels[y * environmentTextureWidth + x];
     return Colour((packed >> 16) & 0xFF, (packed >> 8) & 0xFF, packed & 0xFF);
+}
+
+static glm::vec3 randomPointOnLight()
+{
+    float randomX = randomFloat();
+    float randomZ = randomFloat();
+    float y = lightMin.y - 0.001f;
+
+    float x = lightMin.x + randomX * (lightMax.x - lightMin.x);
+    float z = lightMin.z + randomZ * (lightMax.z - lightMin.z);
+    return glm::vec3(x, y, z);
+}
+
+static glm::vec3 randomDownwardDirection()
+{
+    float randomX = randomFloat() * 2.0f - 1.0f;
+    float randomZ = randomFloat() * 2.0f - 1.0f;
+    float y = -std::sqrt(std::max(0.0f, 1.0f - randomX * randomX - randomZ * randomZ));
+    if (y > 0.0f)
+    {
+        y = -y;
+    }
+    return glm::normalize(glm::vec3(randomX, y, randomZ));
+}
+
+void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::vec3 power, bool insideMedium = false, bool viaSpecular = false)
+{
+    RayTriangleIntersection intersection = getClosestValidIntersection(origin, direction);
+
+    const ModelTriangle &triangle = intersection.intersectedTriangle;
+
+    if (intersection.distanceFromCamera <= 0)
+    {
+        return;
+    }
+    if (triangle.objectName == "light")
+    {
+        return;
+    }
+
+    if ((triangle.isRefractive || triangle.isWater) && worldRefractiveEnabled)
+    {
+        viaSpecular = true;
+        bool entering = !insideMedium;
+        glm::vec3 surfaceNormal = triangle.isWater ? waterNormal(intersection.intersectionPoint, triangle.normal) : triangle.normal;
+
+        float side = glm::dot(direction, triangle.normal) > 0.0f ? -1.0f : 1.0f;
+        glm::vec3 flatNormal = side * triangle.normal;
+        glm::vec3 normal = side * surfaceNormal;
+
+        float RandomChance = fresnelSchlick(glm::clamp(glm::dot(-direction, normal), 0.0f, 1.0f), entering ? 1.0f : triangle.refractiveIndex, entering ? triangle.refractiveIndex : 1.0f);
+
+        if (RandomChance > randomFloat())
+        {
+            direction = glm::normalize(direction - 2.0f * glm::dot(direction, normal) * normal);
+        }
+
+        if (entering)
+        {
+            power *= computeBeerLambertTransmission(triangle.absorption, intersection.distanceFromCamera);
+        }
+
+        tracePhoton(intersection.intersectionPoint + direction * 0.001f, direction, power, entering, viaSpecular);
+    }
+
+    if (triangle.isMirror && worldMirroringEnabled)
+    {
+        viaSpecular = true;
+        direction = glm::normalize(direction - 2.0f * glm::dot(direction, triangle.normal) * triangle.normal);
+        tracePhoton(intersection.intersectionPoint + direction * 0.001f, direction, power, insideMedium, viaSpecular);
+    }
+
+    if (triangle.isMetallic && worldMetallicEnabled)
+    {
+        viaSpecular = true;
+
+        glm::vec3 fresnelTint = fresnelSchlickMetallic(glm::clamp(glm::dot(-direction, triangle.normal), 0.0f, 1.0f), triangle.fresnelReflectance);
+        power *= fresnelTint;
+        direction = glm::normalize(direction - 2.0f * glm::dot(direction, triangle.normal) * triangle.normal);
+        tracePhoton(intersection.intersectionPoint + direction * 0.001f, direction, power, insideMedium, viaSpecular);
+    }
+
+    if (viaSpecular)
+    {
+        causticPhotonMap.addPhoton({intersection.intersectionPoint, direction, power, viaSpecular});
+    }
 }

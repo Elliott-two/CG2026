@@ -65,18 +65,18 @@ void PhotonMap::findNearestPhotonsRecursive(int start, int end, int depth, const
 
     if (diff < 0)
     {
-        findNearestPhotonsRecursive(start, (start + end) / 2, depth + 1, point, radiusSquared, found);
+        findNearestPhotonsRecursive(start, mid, depth + 1, point, radiusSquared, found);
         if (diff * diff <= radiusSquared)
         {
-            findNearestPhotonsRecursive((start + end) / 2 + 1, end, depth + 1, point, radiusSquared, found);
+            findNearestPhotonsRecursive(mid + 1, end, depth + 1, point, radiusSquared, found);
         }
     }
     else
     {
-        findNearestPhotonsRecursive((start + end) / 2 + 1, end, depth + 1, point, radiusSquared, found);
+        findNearestPhotonsRecursive(mid + 1, end, depth + 1, point, radiusSquared, found);
         if (diff * diff <= radiusSquared)
         {
-            findNearestPhotonsRecursive(start, (start + end) / 2 - 1, depth + 1, point, radiusSquared, found);
+            findNearestPhotonsRecursive(start, mid, depth + 1, point, radiusSquared, found);
         }
     }
 }

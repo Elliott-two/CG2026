@@ -1,6 +1,9 @@
 #pragma once
 #include "Renderer.h"
 #include "RayTriangleIntersection.h"
+#include "PhotonMap.h"
+
+PhotonMap causticPhotonMap;
 
 class RayTracedRenderer : public Renderer
 {
@@ -32,6 +35,8 @@ private:
     Colour mirrorredRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool insideMedium, const Colour &mediumScatter, float distanceThroughMedium);
     Colour refractedRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool entering, const Colour &mediumScatter, float distanceThroughMedium);
     Colour mettalicRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool insideMedium, const Colour &mediumScatter, float distanceThroughMedium);
+
+    void tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::vec3 power);
 
     // Barycentric
     glm::vec3 barycentricWeights(const RayTriangleIntersection &intersection);
