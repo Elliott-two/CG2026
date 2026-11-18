@@ -3,6 +3,12 @@
 #include "RayTriangleIntersection.h"
 #include "PhotonMap.h"
 
+enum class PhotonType
+{
+    Caustic,
+    Global
+};
+
 class RayTracedRenderer : public Renderer
 {
 public:
@@ -34,9 +40,10 @@ private:
     Colour refractedRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool entering, const Colour &mediumScatter, float distanceThroughMedium);
     Colour mettalicRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool insideMedium, const Colour &mediumScatter, float distanceThroughMedium);
 
-    void tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::vec3 power, bool insideMedium = false, bool viaSpecular = false, int depth = 0);
+    void tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::vec3 power, bool insideMedium = false, bool viaSpecular = false, int depth = 0, PhotonType photonType = PhotonType::Global);
     PhotonMap causticPhotonMap;
-    void buildCausticPhotonMap();
+    PhotonMap globalPhotonMap;
+    void buildPhotonMaps();
 
     // Barycentric
     glm::vec3 barycentricWeights(const RayTriangleIntersection &intersection);
