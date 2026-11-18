@@ -70,6 +70,7 @@ constexpr int MAX_REFRACTION_RECURSION_DEPTH = 6;
 constexpr int NUMBER_OF_PHOTONS = 500000;
 constexpr int MAX_PHOTON_RECURSION_DEPTH = 8;
 constexpr float CAUSTIC_RADIUS = 0.04f;
+constexpr float GLOBAL_RADIUS = 0.1f;
 
 // Thread-local storage for the view origin, which is used in depth of field calculations
 static thread_local glm::vec3 viewOrigin(0.0f);
@@ -558,11 +559,23 @@ Colour RayTracedRenderer::calculateLighting(glm::vec3 point, glm::vec3 normal, C
         }
         total[0] += causticPhotonMap.estimateIrradiance(point, surfaceNormal, CAUSTIC_RADIUS);
     }
+
+    glm::vec3 brightness;
     if (photonMappingEnabled)
     {
-        globalPhotonMap.estimateIrradiance(point, normalForShading, CAUSTIC_RADIUS);
+        glm::vec3 surfaceNormal = glm::normalize(faceNormal);
+        if (glm::dot(surfaceNormal, viewDir) < 0.0f)
+        {
+            surfaceNormal = -surfaceNormal; // Flip normal if facing away from the view direction
+        }
+        glm::vec3 usedAmbient = globalPhotonMap.estimateIrradiance(point, surfaceNormal, GLOBAL_RADIUS);
+
+        brightness = glm::clamp(total[0] + usedAmbient, 0.0f, 1.0f);
     }
-    glm::vec3 brightness = glm::clamp(AMBIENT + total[0], 0.0f, 1.0f);
+    else
+    {
+        brightness = glm::clamp(AMBIENT + total[0], 0.0f, 1.0f);
+    }
 
     return Colour(
         std::min(255, int(std::round(baseColour.red * brightness.x + 255.0f * total[1].x))),
@@ -1421,8 +1434,7 @@ void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::
     power = power * surfaceColour / survival;
 
     glm::vec3 newDirection = randomHemisphereDirection(surfaceNormal);
-    tracePhoton(intersection.intersectionPoint + surfaceNormal * 0.001f, newDirection, power,
-                false, false, depth + 1, diffuseDepth + 1);
+    tracePhoton(intersection.intersectionPoint + surfaceNormal * 0.001f, newDirection, power, false, false, depth + 1, diffuseDepth + 1);
 }
 
 void RayTracedRenderer::buildPhotonMaps()
