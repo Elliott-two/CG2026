@@ -1,19 +1,15 @@
 #include "PhotonMap.h"
 
-std::vector<Photon> photons;
-
-bool isBuilt = false;
-
-void buildKDTree(int depth, int start, int end)
+void PhotonMap::buildKDTree(int depth, int start, int end)
 {
-    if (start >= (end - 1))
+    if (end - start <= 1)
     {
         return;
     }
 
     int axis = depth % 3;
     int mid = (start + end) / 2;
-    std::sort(photons.begin() + start, photons.begin() + end + 1,
+    std::sort(photons.begin() + start, photons.begin() + end,
               [axis](const Photon &a, const Photon &b)
               {
                   return a.position[axis] < b.position[axis];
@@ -22,40 +18,42 @@ void buildKDTree(int depth, int start, int end)
     buildKDTree(depth + 1, mid + 1, end);
 }
 
-void build(int numPhotons)
+void PhotonMap::build()
 {
-    photons.reserve(numPhotons);
-    buildKDTree(0, 0, numPhotons - 1);
+    photons.reserve(photons.size());
+    buildKDTree(0, 0, photons.size());
     isBuilt = true;
 }
 
-void clear()
+void PhotonMap::clear()
 {
     photons.clear();
     isBuilt = false;
 }
 
-void addPhoton(const Photon &photon)
+void PhotonMap::addPhoton(const Photon &photon)
 {
     photons.push_back(photon);
 }
 
-const std::vector<Photon> &allPhotons()
+const std::vector<Photon> &PhotonMap::allPhotons() const
 {
     return photons;
 }
 
-void findNearestPhotonsRecursive(int start, int end, int depth, const glm::vec3 &point, float radiusSquared, std::vector<const Photon *> &found)
+void PhotonMap::findNearestPhotonsRecursive(int start, int end, int depth, const glm::vec3 &point, float radiusSquared, std::vector<const Photon *> &found) const
 {
     if (start >= end)
     {
         return;
     }
+    int mid = (start + end) / 2.0f;
 
-    Photon medianPhoton = photons[(start + end) / 2];
+    const Photon &medianPhoton = photons[mid];
 
     glm::vec3 photonPosition = medianPhoton.position;
-    float distanceSquared = glm::length(photonPosition - point);
+    float distance = glm::length(photonPosition - point);
+    float distanceSquared = glm::dot(distance, distance);
 
     if (distanceSquared <= radiusSquared)
     {
@@ -84,21 +82,25 @@ void findNearestPhotonsRecursive(int start, int end, int depth, const glm::vec3 
     }
 };
 
-void findNearestPhotons(const glm::vec3 &position, float radius, std::vector<const Photon *> &nearestPhotons)
+void PhotonMap::findNearestPhotons(const glm::vec3 &position, float radius, std::vector<const Photon *> &nearestPhotons) const
 {
     nearestPhotons.clear();
     float radiusSquared = radius * radius;
-    findNearestPhotonsRecursive(0, photons.size() - 1, 0, position, radiusSquared, nearestPhotons);
+    if (!isBuilt || photons.empty())
+    {
+        return;
+    }
+    findNearestPhotonsRecursive(0, photons.size(), 0, position, radiusSquared, nearestPhotons);
 }
 
-glm::vec3 estimateIrradiance(const glm::vec3 &position, const glm::vec3 &normal, float radius)
+glm::vec3 PhotonMap::estimateIrradiance(const glm::vec3 &position, const glm::vec3 &normal, float radius) const
 {
     std::vector<const Photon *> nearestPhotons;
     findNearestPhotons(position, radius, nearestPhotons);
     glm::vec3 irradiance(0.0f);
     for (const Photon *photon : nearestPhotons)
     {
-        if (glm::dot(photon->direction, normal) < 0.0f)
+        if (glm::dot(photon->direction, normal) >= 0.0f)
         {
             continue;
         }
@@ -109,7 +111,7 @@ glm::vec3 estimateIrradiance(const glm::vec3 &position, const glm::vec3 &normal,
     return irradiance / area;
 }
 
-size_t size()
+size_t PhotonMap::size() const
 {
 
     return photons.size();

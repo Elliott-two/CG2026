@@ -13,7 +13,7 @@ struct Photon
 class PhotonMap
 {
 public:
-    void build(int numPhotons);
+    void build();
     void clear();
     void addPhoton(const Photon &photon);
     void findNearestPhotons(const glm::vec3 &position, float radius, std::vector<const Photon *> &nearestPhotons) const;

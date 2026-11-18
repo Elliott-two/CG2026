@@ -24,6 +24,7 @@ struct ModelTriangle
 	bool isMetallic = false;						// Flag to indicate if the triangle is metallic
 	glm::vec3 fresnelReflectance = glm::vec3(1.0f); // Fresnel reflectance for the triangle
 	bool isWater = false;							// Flag to indicate if the triangle is water
+	float stretchFactor = 1.0f;						// Stretch factor for water normal calculation
 
 	ModelTriangle();
 	ModelTriangle(const glm::vec3 &v0, const glm::vec3 &v1, const glm::vec3 &v2, Colour trigColour);

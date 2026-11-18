@@ -961,8 +961,8 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
     const bool isRoughPrimary = (depth == 0 && triangle.roughness > 0.01f);
     const int gridSize = isRoughPrimary ? 4 : 1;
 
-    const float stretchFactorX = (triangle.objectName == "Aluminium") ? 3.0f : 1.0f;
-    const float stretchFactorY = (triangle.objectName == "Aluminium") ? 0.5f : 1.0f;
+    const float stretchFactorX = (triangle.stretchFactor > 1.0f) ? 3.0f : 1.0f;
+    const float stretchFactorY = (triangle.stretchFactor > 1.0f) ? 0.5f : 1.0f;
 
     for (int i = 0; i < gridSize; ++i)
     {

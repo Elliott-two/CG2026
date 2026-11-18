@@ -14,6 +14,8 @@
 #include <iostream>
 #include <fstream>
 #include <unordered_map>
+#include <random>
+#include <set>
 
 // Define globals for WIDTH and HEIGHT of the window (can be accessed from any renderer)
 extern const int WIDTH = 640;
@@ -138,20 +140,21 @@ struct MaterialProperties
 	bool isMetallic;
 	float roughness;
 	float refractiveIndex;
+	float stretchFactor;
 	glm::vec3 fresnelReflectance;
 	glm::vec3 absorption;
 };
 
 // Define a map to associate material names with their properties
 const std::unordered_map<std::string, MaterialProperties> materialProperties = {
-	{"Mirror", {true, false, false, false, 0.0f, 1.0f, glm::vec3(0.0f), glm::vec3(0.0f)}},
-	{"Glass", {false, false, true, false, 0.0f, 1.5f, glm::vec3(0.0f), glm::vec3(0.35f, 0.10f, 0.25f)}},
-	{"Water", {false, true, true, false, 0.0f, 1.333f, glm::vec3(0.0f), glm::vec3(0.90f, 0.25f, 0.15f)}},
-	{"Gold", {false, false, false, true, 0.15f, 1.0f, glm::vec3(1.00f, 0.71f, 0.29f), glm::vec3(0.0f)}},
-	{"Silver", {false, false, false, true, 0.05f, 1.0f, glm::vec3(0.95f, 0.93f, 0.88f), glm::vec3(0.0f)}},
-	{"Copper", {false, false, false, true, 0.33f, 1.0f, glm::vec3(0.95f, 0.64f, 0.54f), glm::vec3(0.0f)}},
-	{"Aluminium", {false, false, false, true, 0.53f, 1.0f, glm::vec3(0.91f, 0.92f, 0.92f), glm::vec3(0.0f)}},
-	{"Iron", {false, false, false, true, 0.8f, 1.0f, glm::vec3(0.56f, 0.57f, 0.58f), glm::vec3(0.04f)}}};
+	{"Mirror", {true, false, false, false, 0.0f, 1.0f, 1.0f, glm::vec3(0.0f), glm::vec3(0.0f)}},
+	{"Glass", {false, false, true, false, 0.0f, 1.5f, 1.0f, glm::vec3(0.0f), glm::vec3(0.35f, 0.10f, 0.25f)}},
+	{"Water", {false, true, true, false, 0.0f, 1.333f, 1.0f, glm::vec3(0.0f), glm::vec3(0.90f, 0.25f, 0.15f)}},
+	{"Gold", {false, false, false, true, 0.15f, 1.0f, 1.0f, glm::vec3(1.00f, 0.71f, 0.29f), glm::vec3(0.0f)}},
+	{"Silver", {false, false, false, true, 0.05f, 1.0f, 1.0f, glm::vec3(0.95f, 0.93f, 0.88f), glm::vec3(0.0f)}},
+	{"Copper", {false, false, false, true, 0.33f, 1.0f, 1.0f, glm::vec3(0.95f, 0.64f, 0.54f), glm::vec3(0.0f)}},
+	{"Aluminium", {false, false, false, true, 0.53f, 1.0f, 3.0f, glm::vec3(0.91f, 0.92f, 0.92f), glm::vec3(0.0f)}},
+	{"Iron", {false, false, false, true, 0.8f, 1.0f, 1.0f, glm::vec3(0.56f, 0.57f, 0.58f), glm::vec3(0.04f)}}};
 
 void loadTexture(const std::string &materialName, const std::string &path)
 {
@@ -778,7 +781,7 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 	std::string currentMaterialName;
 
 	MaterialProperties currentMaterialProperties = {
-		false, false, false, false, 0.0f, 1.0f, glm::vec3(0.0f), glm::vec3(0.0f)};
+		false, false, false, false, 0.0f, 1.0f, 1.0f, glm::vec3(0.0f), glm::vec3(0.0f)};
 
 	// While getting lines
 	while (std::getline(file, line))
@@ -842,6 +845,7 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 			triangle.absorption = currentMaterialProperties.absorption;
 			triangle.fresnelReflectance = currentMaterialProperties.fresnelReflectance;
 			triangle.roughness = currentMaterialProperties.roughness;
+			triangle.stretchFactor = currentMaterialProperties.stretchFactor;
 
 			// Only set the refractive index if the triangle is refractive
 			if (triangle.isRefractive)
@@ -890,8 +894,7 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 			currentMaterialProperties = material != materialProperties.end()
 											? material->second
 											: MaterialProperties{
-												  false, false, false, false, 0.0f, 1.0f,
-												  glm::vec3(0.0f), glm::vec3(0.0f)};
+												  false, false, false, false, 0.0f, 1.0f, 1.0f, glm::vec3(0.0f), glm::vec3(0.0f)};
 
 			// Check if the material name exists in the textureIndexByMaterial map
 			auto tex = textureIndexByMaterial.find(tokens[1]);
@@ -1016,8 +1019,125 @@ std::vector<Colour> colourParseOBJ(const std::string &filename)
 	return colours;
 }
 
+void testPhotonMap()
+{
+	// Fixed seed so every run produces the same photons and test points
+	std::mt19937 generator(12345);
+	std::uniform_real_distribution<float> coordinate(-1.0f, 1.0f);
+
+	// ---------- Test 1: an empty map must not crash and must find nothing ----------
+	{
+		PhotonMap emptyMap;
+		emptyMap.build();
+		std::vector<const Photon *> found;
+		emptyMap.findNearestPhotons(glm::vec3(0.0f), 1.0f, found);
+		std::cout << "[Empty map] found " << found.size() << " (expected 0) "
+				  << (found.empty() ? "PASS" : "FAIL") << std::endl;
+	}
+
+	// ---------- Test 2: KD tree search must match checking every photon ----------
+	PhotonMap photonMap;
+	const int photonCount = 10000;
+	for (int i = 0; i < photonCount; ++i)
+	{
+		Photon photon;
+		photon.position = glm::vec3(coordinate(generator), coordinate(generator), coordinate(generator));
+		photon.direction = glm::vec3(0.0f, -1.0f, 0.0f);
+		photon.power = glm::vec3(1.0f);
+		photonMap.addPhoton(photon);
+	}
+	photonMap.build();
+
+	std::cout << "[Build] stored " << photonMap.size() << " photons (expected "
+			  << photonCount << ") " << (photonMap.size() == static_cast<size_t>(photonCount) ? "PASS" : "FAIL")
+			  << std::endl;
+
+	const float radius = 0.1f;
+	const float radiusSquared = radius * radius;
+	int failures = 0;
+	std::vector<const Photon *> found;
+
+	for (int test = 0; test < 20; ++test)
+	{
+		const glm::vec3 point(coordinate(generator), coordinate(generator), coordinate(generator));
+
+		// Fast answer from the KD tree
+		photonMap.findNearestPhotons(point, radius, found);
+
+		// Slow but definitely correct answer: check every photon
+		int bruteForceCount = 0;
+		for (const Photon &photon : photonMap.allPhotons())
+		{
+			const glm::vec3 offset = photon.position - point;
+			if (glm::dot(offset, offset) <= radiusSquared)
+			{
+				bruteForceCount++;
+			}
+		}
+
+		// Every photon the KD tree returned must really be inside the radius
+		// (catches dangling pointers and using distance instead of distance squared)
+		bool allInside = true;
+		for (const Photon *photon : found)
+		{
+			const glm::vec3 offset = photon->position - point;
+			if (glm::dot(offset, offset) > radiusSquared + 1e-6f)
+			{
+				allInside = false;
+			}
+		}
+
+		// No photon may be returned twice
+		const std::set<const Photon *> unique(found.begin(), found.end());
+		const bool noDuplicates = (unique.size() == found.size());
+
+		const bool passed = (static_cast<int>(found.size()) == bruteForceCount) && allInside && noDuplicates;
+		if (!passed)
+		{
+			failures++;
+		}
+
+		std::cout << "[Search " << test << "] KD tree " << found.size()
+				  << ", brute force " << bruteForceCount
+				  << (allInside ? "" : ", RETURNED A PHOTON OUTSIDE THE RADIUS")
+				  << (noDuplicates ? "" : ", RETURNED DUPLICATES")
+				  << (passed ? "  PASS" : "  FAIL") << std::endl;
+	}
+
+	// ---------- Test 3: estimateIrradiance counts only photons arriving from the front ----------
+	{
+		PhotonMap singlePhotonMap;
+		Photon photon;
+		photon.position = glm::vec3(0.0f);
+		photon.direction = glm::vec3(0.0f, -1.0f, 0.0f); // travelling DOWN onto a floor
+		photon.power = glm::vec3(1.0f);
+		singlePhotonMap.addPhoton(photon);
+		singlePhotonMap.build();
+
+		const float r = 0.1f;
+		const float expected = 1.0f / (3.14159265358979323846f * r * r); // power / (pi r^2), about 31.83
+
+		const glm::vec3 floorFacingUp = singlePhotonMap.estimateIrradiance(glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f), r);
+		const glm::vec3 ceilingFacingDown = singlePhotonMap.estimateIrradiance(glm::vec3(0.0f), glm::vec3(0.0f, -1.0f, 0.0f), r);
+
+		const bool frontPass = std::abs(floorFacingUp.x - expected) < 0.01f;
+		const bool backPass = floorFacingUp.x >= 0.0f && ceilingFacingDown.x == 0.0f;
+
+		std::cout << "[Irradiance, front] " << floorFacingUp.x << " (expected " << expected << ") "
+				  << (frontPass ? "PASS" : "FAIL") << std::endl;
+		std::cout << "[Irradiance, back]  " << ceilingFacingDown.x << " (expected 0) "
+				  << (backPass ? "PASS" : "FAIL") << std::endl;
+	}
+
+	std::cout << (failures == 0 ? "All KD tree searches passed" : "Some KD tree searches FAILED")
+			  << std::endl;
+}
+
 int main(int argc, char *argv[])
 {
+
+	testPhotonMap();
+
 	// Load in textures
 	loadTexture("Cobbles", "../../../05 Navigation and Transformation/models/texture (1).ppm");
 	loadTexture("Environment", "../../../05 Navigation and Transformation/models/environment2.ppm");
@@ -1062,16 +1182,6 @@ int main(int argc, char *argv[])
 		std::vector<ModelTriangle> parsedTriangles = triangleParseOBJ(
 			filennames[i] + ".obj", scalingFactor, translation, rotation);
 		triangles.insert(triangles.end(), parsedTriangles.begin(), parsedTriangles.end());
-	}
-
-	PhotonMap photonMap;
-	photonMap.build(10000);
-
-	std::vector<const Photon *> nearestPhotons;
-
-	for (int i = 0; i < 20; ++i)
-	{
-		photonMap.findNearestPhotons(glm::vec3(0.0f, 0.0f, 0.0f), 10, nearestPhotons);
 	}
 
 	// Clear the vector? Given by intellisense so im going to trust it
