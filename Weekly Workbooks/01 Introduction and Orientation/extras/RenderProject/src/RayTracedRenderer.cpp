@@ -59,7 +59,7 @@ extern bool isRedBoxShowing;
 // All of my preset needed things
 constexpr float PI = 3.14159265358979323846f;
 constexpr float IMAGE_SCALE = 500.0f;
-constexpr float LIGHT_INTENSITY = 40.0f;
+constexpr float LIGHT_INTENSITY = 10.0f;
 constexpr float AMBIENT = 0.25f;
 constexpr float AMBIENT_METAL = 0.05f;
 constexpr int SPECULAR_EXPONENT_LOG2 = 5;
@@ -70,7 +70,8 @@ constexpr int MAX_REFRACTION_RECURSION_DEPTH = 6;
 constexpr int NUMBER_OF_PHOTONS = 250000;
 constexpr int MAX_PHOTON_RECURSION_DEPTH = 8;
 constexpr float CAUSTIC_RADIUS = 0.04f;
-constexpr float GLOBAL_RADIUS = 0.08f;
+constexpr float GLOBAL_RADIUS = 0.16f;
+constexpr float INDIRECT_STRENGTH = 0.8f;
 
 // Thread-local storage for the view origin, which is used in depth of field calculations
 static thread_local glm::vec3 viewOrigin(0.0f);
@@ -588,7 +589,7 @@ Colour RayTracedRenderer::calculateLighting(glm::vec3 point, glm::vec3 normal, C
         {
             surfaceNormal = -surfaceNormal; // Flip normal if facing away from the view direction
         }
-        glm::vec3 usedAmbient = globalPhotonMap.estimateIrradiance(point, surfaceNormal, GLOBAL_RADIUS);
+        glm::vec3 usedAmbient = INDIRECT_STRENGTH * globalPhotonMap.estimateIrradiance(point, surfaceNormal, GLOBAL_RADIUS);
 
         brightness = glm::clamp(total[0] + usedAmbient, 0.0f, 1.0f);
     }
