@@ -94,7 +94,7 @@ void PhotonMap::findNearestPhotons(const glm::vec3 &position, float radius, std:
 
 glm::vec3 PhotonMap::estimateIrradiance(const glm::vec3 &position, const glm::vec3 &normal, float radius) const
 {
-    std::vector<const Photon *> nearestPhotons;
+    static thread_local std::vector<const Photon *> nearestPhotons;
     findNearestPhotons(position, radius, nearestPhotons);
     glm::vec3 irradiance(0.0f);
     for (const Photon *photon : nearestPhotons)

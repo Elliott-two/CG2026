@@ -67,10 +67,10 @@ constexpr float REFLEX_RADIUS = 0.5f;
 constexpr float SWIRL_FACTOR = 4.0f;
 constexpr int SHADOW_GRID = 2;
 constexpr int MAX_REFRACTION_RECURSION_DEPTH = 6;
-constexpr int NUMBER_OF_PHOTONS = 500000;
+constexpr int NUMBER_OF_PHOTONS = 250000;
 constexpr int MAX_PHOTON_RECURSION_DEPTH = 8;
 constexpr float CAUSTIC_RADIUS = 0.04f;
-constexpr float GLOBAL_RADIUS = 0.1f;
+constexpr float GLOBAL_RADIUS = 0.08f;
 
 // Thread-local storage for the view origin, which is used in depth of field calculations
 static thread_local glm::vec3 viewOrigin(0.0f);
@@ -320,8 +320,14 @@ void RayTracedRenderer::draw(DrawingWindow &window)
                    (prevPhotonMappingEnabled != photonMappingEnabled) ||
                    (prevPhotonDebuggingEnabled != photonDebuggingEnabled);
 
+    bool lightPathsChanged = (prevSphereShowing != isSphereShowing) ||
+                             (prevBlueBoxShowing != isBlueBoxShowing) ||
+                             (prevRedBoxShowing != isRedBoxShowing) ||
+                             (prevWorldMirroringEnabled != worldMirroringEnabled) ||
+                             (prevWorldRefractiveEnabled != worldRefractiveEnabled) ||
+                             (prevWorldMetallicEnabled != worldMetallicEnabled);
     // Check for change
-    if (forceRayTraceRedraw || changed)
+    if (forceRayTraceRedraw || changed || lightPathsChanged)
     {
         frameRendered = false;       // Force re-render if anything visible changed
         forceRayTraceRedraw = false; // Reset the force redraw flag
@@ -339,7 +345,11 @@ void RayTracedRenderer::draw(DrawingWindow &window)
         prevWorldMetallicEnabled = worldMetallicEnabled;
         prevEnvironmentMapEnabled = environmentMapEnabled;
         prevEnvironmentMapSeenByCamera = environmentMapSeenByCamera;
-        photonMapChanged = true;
+        if (lightPathsChanged)
+        {
+            photonMapChanged = true;
+        }
+
         prevPhotonMappingEnabled = photonMappingEnabled;
         prevPhotonDebuggingEnabled = photonDebuggingEnabled;
     }
@@ -407,20 +417,30 @@ void RayTracedRenderer::draw(DrawingWindow &window)
     if (photonDebuggingEnabled && photonMappingEnabled)
     {
         window.clearPixels();
-        for (const Photon &photon : causticPhotonMap.allPhotons())
+        const PhotonMap *photonMaps[] = {&causticPhotonMap, &globalPhotonMap};
+        const uint32_t photonColours[] = {0xFFFFFF00, 0xFF00FFFF};
+
+        for (int mapIndex = 0; mapIndex < 2; ++mapIndex)
         {
-            glm::vec3 screenPosition = glm::transpose(cameraOrientation) * (photon.position - cameraPosition);
-            if (screenPosition.z >= 0.0f)
+            for (const Photon &photon : photonMaps[mapIndex]->allPhotons())
             {
-                continue; // Photon is behind the camera
+                glm::vec3 screenPosition = glm::transpose(cameraOrientation) * (photon.position - cameraPosition);
+                if (screenPosition.z >= 0.0f)
+                {
+                    continue; // Photon is behind the camera
+                }
+
+                float u = screenPosition.x / -screenPosition.z;
+                float v = screenPosition.y / -screenPosition.z;
+
+                int x = static_cast<int>(u * IMAGE_SCALE * focalLength + WIDTH / 2.0f);
+                int y = static_cast<int>(HEIGHT / 2.0f - v * IMAGE_SCALE * focalLength);
+                if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT)
+                {
+                    continue;
+                }
+                window.setPixelColour(x, y, photonColours[mapIndex]);
             }
-
-            float u = screenPosition.x / -screenPosition.z;
-            float v = screenPosition.y / -screenPosition.z;
-
-            int x = static_cast<int>(u * IMAGE_SCALE * focalLength + WIDTH / 2.0f);
-            int y = static_cast<int>(HEIGHT / 2.0f - v * IMAGE_SCALE * focalLength);
-            window.setPixelColour(x, y, 0xFFFFFFFF); // Set the pixel to a bright yellow
         }
     }
     prevCameraPosition = cameraPosition;
@@ -1434,6 +1454,9 @@ void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::
     power = power * surfaceColour / survival;
 
     glm::vec3 newDirection = randomHemisphereDirection(surfaceNormal);
+
+    power *= 2.0f * glm::dot(newDirection, surfaceNormal);
+
     tracePhoton(intersection.intersectionPoint + surfaceNormal * 0.001f, newDirection, power, false, false, depth + 1, diffuseDepth + 1);
 }
 
