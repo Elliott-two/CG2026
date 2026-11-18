@@ -978,16 +978,16 @@ static glm::vec3 fresnelSchlickMetallic(float cosTheta, const glm::vec3 &f0)
 }
 
 // Attenuate the colour based on the absorption coefficients and distance traveled through the medium
-static Colour attenuateColour(const Colour &colour, const glm::vec3 &absorption, float distance, const Colour &scatter = Colour(0, 0, 0))
+static Colour attenuateColour(const Colour &colour, const glm::vec3 &absorption, float distance)
 {
     // Calculate the transmission for each colour channel using the Beer-Lambert law
     glm::vec3 transmission = computeBeerLambertTransmission(absorption, distance);
 
     // Return the attenuated colour by multiplying the original colour by the transmission and clamping the values to a maximum of 255
     return Colour(
-        std::min(static_cast<int>(colour.red * transmission.r + scatter.red * (1.0f - transmission.r)), 255),
-        std::min(static_cast<int>(colour.green * transmission.g + scatter.green * (1.0f - transmission.g)), 255),
-        std::min(static_cast<int>(colour.blue * transmission.b + scatter.blue * (1.0f - transmission.b)), 255));
+        std::min(static_cast<int>(colour.red * transmission.r), 255),
+        std::min(static_cast<int>(colour.green * transmission.g), 255),
+        std::min(static_cast<int>(colour.blue * transmission.b), 255));
 }
 
 struct Wave
@@ -1047,7 +1047,7 @@ static glm::vec3 waterNormal(const glm::vec3 &point, const glm::vec3 &flatNormal
     return glm::normalize(flatNormal - totalSlope);
 }
 
-Colour RayTracedRenderer::mirrorredRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool insideMedium, const Colour &mediumScatter, float distanceThroughMedium)
+Colour RayTracedRenderer::mirrorredRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool insideMedium, float distanceThroughMedium)
 {
     // Calculate the reflected direction using the given reflection formula
     const ModelTriangle &triangle = intersection.intersectedTriangle;
@@ -1058,8 +1058,7 @@ Colour RayTracedRenderer::mirrorredRay(const RayTriangleIntersection &intersecti
         reflectedDirection,
         depth + 1,
         mediumAbsorption,
-        insideMedium,
-        mediumScatter);
+        insideMedium);
     return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium);
 }
 
@@ -1072,7 +1071,7 @@ static glm::vec2 squashGrid(float u, float v)
         y * std::sqrt(std::max(0.0f, 1.0f - 0.5f * x * x)));
 }
 
-Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool insideMedium, const Colour &mediumScatter, float distanceThroughMedium)
+Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool insideMedium, float distanceThroughMedium)
 {
     // Calculate the reflected direction using the given reflection formula
     const ModelTriangle &triangle = intersection.intersectedTriangle;
@@ -1086,7 +1085,7 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
     if (intersection.triangleIndex >= vertexNormalsByTriangle.size())
     {
         // Fall back to flat shading if something is out of sync
-        return mirrorredRay(intersection, direction, depth, mediumAbsorption, insideMedium, mediumScatter, distanceThroughMedium);
+        return mirrorredRay(intersection, direction, depth, mediumAbsorption, insideMedium, distanceThroughMedium);
     }
     // Get the vertex normals for the triangle and calculate the barycentric weights
     std::array<glm::vec3, 3> normals = vertexNormalsByTriangle[intersection.triangleIndex];
@@ -1178,8 +1177,7 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
                 fuzzyDirection,
                 depth + 1,
                 mediumAbsorption,
-                insideMedium,
-                mediumScatter);
+                insideMedium);
 
             accumulatedColour += glm::vec3(sampleColour.red, sampleColour.green, sampleColour.blue);
             validSamples++;
@@ -1197,8 +1195,7 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
             reflectedDirection,
             depth + 1,
             mediumAbsorption,
-            insideMedium,
-            mediumScatter);
+            insideMedium);
         accumulatedColour = glm::vec3(sampleColour.red, sampleColour.green, sampleColour.blue);
     }
     // Apply Conductor Fresnel tint
@@ -1236,10 +1233,10 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
         std::min(255, static_cast<int>(std::round(finalLinearColour.r))),
         std::min(255, static_cast<int>(std::round(finalLinearColour.g))),
         std::min(255, static_cast<int>(std::round(finalLinearColour.b))));
-    return attenuateColour(tintedColour, mediumAbsorption, distanceThroughMedium, mediumScatter);
+    return attenuateColour(tintedColour, mediumAbsorption, distanceThroughMedium);
 }
 
-Colour RayTracedRenderer::refractedRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool entering, const Colour &mediumScatter, float distanceThroughMedium)
+Colour RayTracedRenderer::refractedRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool entering, float distanceThroughMedium)
 {
     // Get the intersected triangle and the intersection point for further processing
     const ModelTriangle &triangle = intersection.intersectedTriangle;
@@ -1252,16 +1249,24 @@ Colour RayTracedRenderer::refractedRay(const RayTriangleIntersection &intersecti
         surfaceNormal = waterNormal(hitPoint, triangle.normal);
     }
 
-    // Determine the side of the surface normal based on the direction of the ray and the triangle's normal
-    float side = 1.0f;
-    if (glm::dot(direction, triangle.normal) > 0.0f)
-    {
-        side = -1.0f;
-    }
+    glm::vec3 flatNormal;
+    glm::vec3 normal;
     // Calculate the flat normal and the actual normal for refraction calculations
-    glm::vec3 flatNormal = side * triangle.normal;
-    // Calculate the actual normal for refraction calculations, taking into account the side of the surface normal
-    glm::vec3 normal = side * surfaceNormal;
+    if (entering)
+    {
+        flatNormal = triangle.normal;
+        normal = surfaceNormal;
+    }
+    else
+    {
+        flatNormal = -triangle.normal;
+        normal = -surfaceNormal;
+    }
+
+    if (glm::dot(direction, normal) > 0.0f)
+    {
+        normal = -normal;
+    }
 
     // Determine the indices of refraction for the entering and exiting media based on whether the ray is entering or exiting the triangle
     float n1 = triangle.refractiveIndex;
@@ -1273,19 +1278,19 @@ Colour RayTracedRenderer::refractedRay(const RayTriangleIntersection &intersecti
     }
 
     // Calculate the reflected direction using the reflection formula and normalize it
-    glm::vec3 reflectedDirection = glm::normalize(direction - 2.0f * glm::dot(direction, normal) * normal);
-
-    // If the reflected direction is below the surface, adjust it to ensure it reflects correctly
-    if (glm::dot(reflectedDirection, flatNormal) < 0.0f)
-        reflectedDirection = glm::normalize(reflectedDirection - 2.0f * glm::dot(reflectedDirection, flatNormal) * flatNormal);
+    glm::vec3 effectiveNormal = normal;
+    if (glm::dot(glm::reflect(direction, effectiveNormal), flatNormal) <= 0.0f)
+    {
+        effectiveNormal = glm::normalize(glm::mix(normal, flatNormal, 0.5f));
+    }
+    glm::vec3 reflectedDirection = glm::normalize(glm::reflect(direction, effectiveNormal));
 
     Colour reflectedColour = traceRay(
         hitPoint + reflectedDirection * SURFACE_OFFSET,
         reflectedDirection,
         depth + 1,
         mediumAbsorption,
-        !entering,
-        mediumScatter);
+        !entering);
 
     // Calculate the refracted direction using Snell's law and check for total internal reflection
     glm::vec3 refractedDirection;
@@ -1294,28 +1299,19 @@ Colour RayTracedRenderer::refractedRay(const RayTriangleIntersection &intersecti
     // If refraction is not possible (total internal reflection), return the attenuated reflected colour
     if (!refractRay(direction, normal, indexOfRefraction, refractedDirection))
     {
-        return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium, mediumScatter);
+        return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium);
     }
     if (glm::dot(refractedDirection, flatNormal) > 0.0f &&
         !refractRay(direction, flatNormal, indexOfRefraction, refractedDirection))
     {
-        return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium, mediumScatter);
-    }
-
-    // Calculate the colour inside the medium based on whether the triangle is water or not, using the triangle's colour for water surfaces
-    Colour insideScatter(0, 0, 0);
-    if (triangle.isWater)
-    {
-        insideScatter = triangle.colour;
+        return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium);
     }
 
     // Trace the refracted ray recursively, offsetting the starting point slightly to avoid self-intersection
     glm::vec3 refractedAbsorption(0.0f);
-    Colour refractedScatter(0, 0, 0);
     if (entering)
     {
         refractedAbsorption = triangle.absorption;
-        refractedScatter = insideScatter;
     }
 
     Colour refractedColour = traceRay(
@@ -1323,8 +1319,7 @@ Colour RayTracedRenderer::refractedRay(const RayTriangleIntersection &intersecti
         refractedDirection,
         depth + 1,
         refractedAbsorption,
-        entering,
-        refractedScatter);
+        entering);
 
     // Calculate the Fresnel-Schlick factor based on the angle of incidence and the indices of refraction
     float cosTheta = -glm::dot(refractedDirection, normal);
@@ -1339,11 +1334,11 @@ Colour RayTracedRenderer::refractedRay(const RayTriangleIntersection &intersecti
         std::min(static_cast<int>(fresnelSchlickFactor * reflectedColour.red + refractedFactor * refractedColour.red), 255),
         std::min(static_cast<int>(fresnelSchlickFactor * reflectedColour.green + refractedFactor * refractedColour.green), 255),
         std::min(static_cast<int>(fresnelSchlickFactor * reflectedColour.blue + refractedFactor * refractedColour.blue), 255));
-    return attenuateColour(colour, mediumAbsorption, distanceThroughMedium, mediumScatter);
+    return attenuateColour(colour, mediumAbsorption, distanceThroughMedium);
 }
 
 // Trace a ray through the scene, handling reflections, refractions, and shading based on the intersection with triangles
-Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool insideMedium, const Colour &mediumScatter)
+Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool insideMedium)
 {
     if (depth > MAX_REFRACTION_RECURSION_DEPTH)
         return Colour(0, 0, 0);
@@ -1354,10 +1349,6 @@ Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &dir
     // If no intersection is found or the intersection is behind the camera, return the appropriate colour based on whether the ray is inside a medium or not
     if (intersection.distanceFromCamera <= 0)
     {
-        if (insideMedium)
-        {
-            return mediumScatter;
-        }
 
         if (environmentMapEnabled && environmentMapSeenByCamera)
         {
@@ -1388,37 +1379,37 @@ Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &dir
         distanceThroughMedium = intersection.distanceFromCamera;
     }
 
-    auto throughMedium = [&](const Colour &colour, const Colour &scatter)
+    auto throughMedium = [&](const Colour &colour)
     {
-        return attenuateColour(colour, mediumAbsorption, distanceThroughMedium, scatter);
+        return attenuateColour(colour, mediumAbsorption, distanceThroughMedium);
     };
 
     // Handle different cases based on the properties of the intersected triangle
     // If the triangle is a light source, attenuate the colour based on the medium absorption and distance traveled
     if (triangle.objectName == "light")
     {
-        return throughMedium(triangle.colour, mediumScatter);
+        return throughMedium(triangle.colour);
     }
 
     // If the triangle is a mirror and world mirroring is enabled, calculate the reflected ray and trace it recursively
     if (triangle.isMirror && worldMirroringEnabled)
     {
-        return mirrorredRay(intersection, direction, depth, mediumAbsorption, insideMedium, mediumScatter, distanceThroughMedium);
+        return mirrorredRay(intersection, direction, depth, mediumAbsorption, insideMedium, distanceThroughMedium);
     }
 
     if (triangle.isMetallic && worldMetallicEnabled)
     {
-        return mettalicRay(intersection, direction, depth, mediumAbsorption, insideMedium, mediumScatter, distanceThroughMedium);
+        return mettalicRay(intersection, direction, depth, mediumAbsorption, insideMedium, distanceThroughMedium);
     }
 
     const bool entering = !insideMedium;
     // If the triangle is refractive and world glass is enabled, handle refraction and reflection using Fresnel-Schlick approximation
     if (triangle.isRefractive && worldRefractiveEnabled)
     {
-        return refractedRay(intersection, direction, depth, mediumAbsorption, entering, mediumScatter, distanceThroughMedium);
+        return refractedRay(intersection, direction, depth, mediumAbsorption, entering, distanceThroughMedium);
     }
     viewOrigin = origin;
-    return throughMedium(shadingHelper(intersection), Colour(0, 0, 0));
+    return throughMedium(shadingHelper(intersection));
 }
 
 Colour RayTracedRenderer::enviornmentHelper(const glm::vec3 &direction)
@@ -1536,6 +1527,7 @@ void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::
 
         glm::vec3 surfaceNormal;
 
+        // Check for water
         if (triangle.isWater)
         {
             waterNormal(intersection.intersectionPoint, triangle.normal);
@@ -1545,6 +1537,7 @@ void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::
             surfaceNormal = triangle.normal;
         }
 
+        // Determine the side of the surface normal based on the direction of the photon and the triangle's normal
         float side;
         if (glm::dot(direction, triangle.normal) > 0.0f)
         {
