@@ -59,6 +59,8 @@ bool worldMetallicEnabled = false;
 bool environmentMapEnabled = false;
 bool environmentMapSeenByCamera = false;
 
+bool photonMappingEnabled = false;
+
 float waterTime = 0.0f;
 
 // Flag to enable/disable soft shadows
@@ -107,7 +109,7 @@ std::string objFilename = "/Assets/textured-cornell-box";
 std::string objFilenameSphere = "/Assets/sphere";
 
 // Core 3D rendering data structures (for when we eventually get around to working in 3D ;o)
-float focalLength = 2.0f;
+float focalLength = 2.0;
 float focalDistance = 4.0f;
 float lenseSize = 0.13f;
 int raysPerPixel = 1;
