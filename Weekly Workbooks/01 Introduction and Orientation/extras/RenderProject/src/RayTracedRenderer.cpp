@@ -1306,7 +1306,22 @@ static glm::vec3 randomDownwardDirection()
     return glm::normalize(glm::vec3(randomX, y, randomZ));
 }
 
-void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::vec3 power, bool insideMedium, bool viaSpecular, int depth, PhotonType photonType)
+static glm::vec3 randomHemisphereDirection(const glm::vec3 &normal)
+{
+    glm::vec3 direction;
+    do
+    {
+        direction = glm::vec3(
+            2.0f * randomFloat() - 1.0f,
+            2.0f * randomFloat() - 1.0f,
+            2.0f * randomFloat() - 1.0f);
+    } while (glm::dot(direction, direction) > 1.0f || glm::dot(direction, direction) < 1e-8f);
+
+    direction = glm::normalize(direction);
+    return glm::dot(direction, normal) < 0.0f ? -direction : direction;
+}
+
+void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::vec3 power, bool insideMedium, bool viaSpecular, int depth, int diffuseDepth)
 {
     if (depth >= MAX_PHOTON_RECURSION_DEPTH)
     {
@@ -1327,7 +1342,6 @@ void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::
 
     if ((triangle.isRefractive || triangle.isWater) && worldRefractiveEnabled)
     {
-        photonType = PhotonType::Caustic;
         if (insideMedium)
         {
             power *= computeBeerLambertTransmission(triangle.absorption, intersection.distanceFromCamera);
@@ -1358,22 +1372,20 @@ void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::
             }
         }
 
-        tracePhoton(intersection.intersectionPoint + direction * 0.001f, direction, power, insideMedium, viaSpecular, depth + 1);
+        tracePhoton(intersection.intersectionPoint + direction * 0.001f, direction, power, insideMedium, viaSpecular, depth + 1, diffuseDepth);
         return;
     }
 
     if (triangle.isMirror && worldMirroringEnabled)
     {
-        photonType = PhotonType::Caustic;
         viaSpecular = true;
         direction = glm::normalize(direction - 2.0f * glm::dot(direction, triangle.normal) * triangle.normal);
-        tracePhoton(intersection.intersectionPoint + direction * 0.001f, direction, power, insideMedium, viaSpecular, depth + 1);
+        tracePhoton(intersection.intersectionPoint + direction * 0.001f, direction, power, insideMedium, viaSpecular, depth + 1, diffuseDepth);
         return;
     }
 
     if (triangle.isMetallic && worldMetallicEnabled)
     {
-        photonType = PhotonType::Caustic;
         viaSpecular = true;
 
         glm::vec3 fresnelTint = fresnelSchlickMetallic(glm::clamp(glm::dot(-direction, triangle.normal), 0.0f, 1.0f), triangle.fresnelReflectance);
@@ -1381,32 +1393,36 @@ void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::
         float side = glm::dot(direction, triangle.normal) > 0.0f ? -1.0f : 1.0f;
         glm::vec3 normal = side * triangle.normal;
         direction = glm::normalize(direction - 2.0f * glm::dot(direction, normal) * normal);
-        tracePhoton(intersection.intersectionPoint + direction * 0.001f, direction, power, insideMedium, viaSpecular, depth + 1);
+        tracePhoton(intersection.intersectionPoint + direction * 0.001f, direction, power, insideMedium, viaSpecular, depth + 1, diffuseDepth);
         return;
     }
 
-    if (viaSpecular)
+    glm::vec3 surfaceNormal = triangle.normal;
+    if (glm::dot(direction, surfaceNormal) > 0.0f)
     {
-        float probability = ((power.r + power.g + power.b) / 3.0f) * 255.0f;
-        if (randomFloat() > probability)
-        {
-            if (photonType == PhotonType::Caustic)
-            {
-                causticPhotonMap.addPhoton({intersection.intersectionPoint, direction, power});
-            }
-            else
-            {
-                globalPhotonMap.addPhoton({intersection.intersectionPoint, direction, power});
-            }
-        }
-        else
-        {
-            power *= (triangle.colour.blue + triangle.colour.green + triangle.colour.red) * (1.0f / 255.0f);
-            power /= probability;
-            tracePhoton(intersection.intersectionPoint + direction * 0.001f, direction, power, insideMedium, false, depth + 1);
-        }
+        surfaceNormal = -surfaceNormal;
     }
-    return;
+
+    if (diffuseDepth == 0 && viaSpecular)
+    {
+        causticPhotonMap.addPhoton({intersection.intersectionPoint, direction, power});
+    }
+    else if (diffuseDepth > 0)
+    {
+        globalPhotonMap.addPhoton({intersection.intersectionPoint, direction, power});
+    }
+
+    glm::vec3 surfaceColour = glm::vec3(triangle.colour.red, triangle.colour.green, triangle.colour.blue) / 255.0f;
+    float survival = (surfaceColour.r + surfaceColour.g + surfaceColour.b) / 3.0f;
+    if (randomFloat() >= survival)
+    {
+        return;
+    }
+    power = power * surfaceColour / survival;
+
+    glm::vec3 newDirection = randomHemisphereDirection(surfaceNormal);
+    tracePhoton(intersection.intersectionPoint + surfaceNormal * 0.001f, newDirection, power,
+                false, false, depth + 1, diffuseDepth + 1);
 }
 
 void RayTracedRenderer::buildPhotonMaps()

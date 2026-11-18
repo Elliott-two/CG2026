@@ -610,6 +610,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 			print("Enabling photon debugging");
 			photonDebuggingEnabled = true;
 		}
+		break;
 	default:
 		break;
 	}
