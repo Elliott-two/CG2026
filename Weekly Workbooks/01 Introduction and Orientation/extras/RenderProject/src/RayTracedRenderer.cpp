@@ -36,6 +36,7 @@ extern bool environmentMapEnabled;
 extern bool environmentMapSeenByCamera;
 
 extern bool photonMappingEnabled;
+extern bool photonDebuggingEnabled;
 
 extern float waterTime;
 
@@ -295,6 +296,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
     static bool prevEnvironmentMapEnabled = environmentMapEnabled;
     static bool prevEnvironmentMapSeenByCamera = environmentMapSeenByCamera;
     static bool prevPhotonMappingEnabled = photonMappingEnabled;
+    static bool prevPhotonDebuggingEnabled = photonDebuggingEnabled;
 
     static bool photonMapChanged = true;
 
@@ -312,7 +314,8 @@ void RayTracedRenderer::draw(DrawingWindow &window)
                    (prevWorldMetallicEnabled != worldMetallicEnabled) ||
                    (prevEnvironmentMapEnabled != environmentMapEnabled) ||
                    (prevEnvironmentMapSeenByCamera != environmentMapSeenByCamera) ||
-                   (prevPhotonMappingEnabled != photonMappingEnabled);
+                   (prevPhotonMappingEnabled != photonMappingEnabled) ||
+                   (prevPhotonDebuggingEnabled != photonDebuggingEnabled);
 
     // Check for change
     if (forceRayTraceRedraw || changed)
@@ -335,6 +338,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
         prevEnvironmentMapSeenByCamera = environmentMapSeenByCamera;
         photonMapChanged = true;
         prevPhotonMappingEnabled = photonMappingEnabled;
+        prevPhotonDebuggingEnabled = photonDebuggingEnabled;
     }
 
     // Check if the camera has moved or rotated since the last frame
@@ -397,6 +401,25 @@ void RayTracedRenderer::draw(DrawingWindow &window)
         }
     }
 
+    if (photonDebuggingEnabled && photonMappingEnabled)
+    {
+        window.clearPixels();
+        for (const Photon &photon : causticPhotonMap.allPhotons())
+        {
+            glm::vec3 screenPosition = glm::transpose(cameraOrientation) * (photon.position - cameraPosition);
+            if (screenPosition.z >= 0.0f)
+            {
+                continue; // Photon is behind the camera
+            }
+
+            float u = screenPosition.x / -screenPosition.z;
+            float v = screenPosition.y / -screenPosition.z;
+
+            int x = static_cast<int>(u * IMAGE_SCALE * focalLength + WIDTH / 2.0f);
+            int y = static_cast<int>(HEIGHT / 2.0f - v * IMAGE_SCALE * focalLength);
+            window.setPixelColour(x, y, 0xFFFFFFFF); // Set the pixel to a bright yellow
+        }
+    }
     prevCameraPosition = cameraPosition;
     prevCameraOrientation = cameraOrientation;
     frameRendered = true;
@@ -1309,14 +1332,17 @@ void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::
         }
         else
         {
-            if (!refractRay(direction, normal, entering ? 1.0f / triangle.refractiveIndex : triangle.refractiveIndex, direction))
+            if (refractRay(direction, normal, entering ? 1.0f / triangle.refractiveIndex : triangle.refractiveIndex, direction))
+            {
+                insideMedium = !insideMedium;
+            }
+            else
             {
                 direction = glm::normalize(direction - 2.0f * glm::dot(direction, normal) * normal);
             }
-            insideMedium = !insideMedium;
         }
 
-        tracePhoton(intersection.intersectionPoint + direction * 0.001f, direction, power, !entering, viaSpecular, depth + 1);
+        tracePhoton(intersection.intersectionPoint + direction * 0.001f, direction, power, insideMedium, viaSpecular, depth + 1);
         return;
     }
 

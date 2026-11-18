@@ -60,6 +60,7 @@ bool environmentMapEnabled = false;
 bool environmentMapSeenByCamera = false;
 
 bool photonMappingEnabled = false;
+bool photonDebuggingEnabled = false;
 
 float waterTime = 0.0f;
 
@@ -597,6 +598,18 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 			photonMappingEnabled = true;
 		}
 		break;
+	case SDLK_j:
+		print("Toggle photon debugging");
+		if (photonDebuggingEnabled)
+		{
+			print("Disabling photon debugging");
+			photonDebuggingEnabled = false;
+		}
+		else
+		{
+			print("Enabling photon debugging");
+			photonDebuggingEnabled = true;
+		}
 	default:
 		break;
 	}
