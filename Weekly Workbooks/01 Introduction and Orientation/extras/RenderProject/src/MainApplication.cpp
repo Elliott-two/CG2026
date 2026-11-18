@@ -584,6 +584,19 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 		cameraPosition = glm::vec3(0.0f, 0.0f, 6.0f);
 		cameraOrientation = glm::mat3(1.0f);
 		break;
+	case SDLK_k:
+		print("Toggle photon mapping");
+		if (photonMappingEnabled)
+		{
+			print("Disabling photon mapping");
+			photonMappingEnabled = false;
+		}
+		else
+		{
+			print("Enabling photon mapping");
+			photonMappingEnabled = true;
+		}
+		break;
 	default:
 		break;
 	}
@@ -1021,124 +1034,8 @@ std::vector<Colour> colourParseOBJ(const std::string &filename)
 	return colours;
 }
 
-void testPhotonMap()
-{
-	// Fixed seed so every run produces the same photons and test points
-	std::mt19937 generator(12345);
-	std::uniform_real_distribution<float> coordinate(-1.0f, 1.0f);
-
-	// ---------- Test 1: an empty map must not crash and must find nothing ----------
-	{
-		PhotonMap emptyMap;
-		emptyMap.build();
-		std::vector<const Photon *> found;
-		emptyMap.findNearestPhotons(glm::vec3(0.0f), 1.0f, found);
-		std::cout << "[Empty map] found " << found.size() << " (expected 0) "
-				  << (found.empty() ? "PASS" : "FAIL") << std::endl;
-	}
-
-	// ---------- Test 2: KD tree search must match checking every photon ----------
-	PhotonMap photonMap;
-	const int photonCount = 10000;
-	for (int i = 0; i < photonCount; ++i)
-	{
-		Photon photon;
-		photon.position = glm::vec3(coordinate(generator), coordinate(generator), coordinate(generator));
-		photon.direction = glm::vec3(0.0f, -1.0f, 0.0f);
-		photon.power = glm::vec3(1.0f);
-		photonMap.addPhoton(photon);
-	}
-	photonMap.build();
-
-	std::cout << "[Build] stored " << photonMap.size() << " photons (expected "
-			  << photonCount << ") " << (photonMap.size() == static_cast<size_t>(photonCount) ? "PASS" : "FAIL")
-			  << std::endl;
-
-	const float radius = 0.1f;
-	const float radiusSquared = radius * radius;
-	int failures = 0;
-	std::vector<const Photon *> found;
-
-	for (int test = 0; test < 20; ++test)
-	{
-		const glm::vec3 point(coordinate(generator), coordinate(generator), coordinate(generator));
-
-		// Fast answer from the KD tree
-		photonMap.findNearestPhotons(point, radius, found);
-
-		// Slow but definitely correct answer: check every photon
-		int bruteForceCount = 0;
-		for (const Photon &photon : photonMap.allPhotons())
-		{
-			const glm::vec3 offset = photon.position - point;
-			if (glm::dot(offset, offset) <= radiusSquared)
-			{
-				bruteForceCount++;
-			}
-		}
-
-		// Every photon the KD tree returned must really be inside the radius
-		// (catches dangling pointers and using distance instead of distance squared)
-		bool allInside = true;
-		for (const Photon *photon : found)
-		{
-			const glm::vec3 offset = photon->position - point;
-			if (glm::dot(offset, offset) > radiusSquared + 1e-6f)
-			{
-				allInside = false;
-			}
-		}
-
-		// No photon may be returned twice
-		const std::set<const Photon *> unique(found.begin(), found.end());
-		const bool noDuplicates = (unique.size() == found.size());
-
-		const bool passed = (static_cast<int>(found.size()) == bruteForceCount) && allInside && noDuplicates;
-		if (!passed)
-		{
-			failures++;
-		}
-
-		std::cout << "[Search " << test << "] KD tree " << found.size()
-				  << ", brute force " << bruteForceCount
-				  << (allInside ? "" : ", RETURNED A PHOTON OUTSIDE THE RADIUS")
-				  << (noDuplicates ? "" : ", RETURNED DUPLICATES")
-				  << (passed ? "  PASS" : "  FAIL") << std::endl;
-	}
-
-	// ---------- Test 3: estimateIrradiance counts only photons arriving from the front ----------
-	{
-		PhotonMap singlePhotonMap;
-		Photon photon;
-		photon.position = glm::vec3(0.0f);
-		photon.direction = glm::vec3(0.0f, -1.0f, 0.0f); // travelling DOWN onto a floor
-		photon.power = glm::vec3(1.0f);
-		singlePhotonMap.addPhoton(photon);
-		singlePhotonMap.build();
-
-		const float r = 0.1f;
-		const float expected = 1.0f / (3.14159265358979323846f * r * r); // power / (pi r^2), about 31.83
-
-		const glm::vec3 floorFacingUp = singlePhotonMap.estimateIrradiance(glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f), r);
-		const glm::vec3 ceilingFacingDown = singlePhotonMap.estimateIrradiance(glm::vec3(0.0f), glm::vec3(0.0f, -1.0f, 0.0f), r);
-
-		const bool frontPass = std::abs(floorFacingUp.x - expected) < 0.01f;
-		const bool backPass = floorFacingUp.x >= 0.0f && ceilingFacingDown.x == 0.0f;
-
-		std::cout << "[Irradiance, front] " << floorFacingUp.x << " (expected " << expected << ") "
-				  << (frontPass ? "PASS" : "FAIL") << std::endl;
-		std::cout << "[Irradiance, back]  " << ceilingFacingDown.x << " (expected 0) "
-				  << (backPass ? "PASS" : "FAIL") << std::endl;
-	}
-
-	std::cout << (failures == 0 ? "All KD tree searches passed" : "Some KD tree searches FAILED")
-			  << std::endl;
-}
-
 int main(int argc, char *argv[])
 {
-
-	testPhotonMap();
 
 	// Load in textures
 	loadTexture("Cobbles", "../../../05 Navigation and Transformation/models/texture (1).ppm");

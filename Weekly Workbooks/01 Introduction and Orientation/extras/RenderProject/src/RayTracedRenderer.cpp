@@ -66,6 +66,7 @@ constexpr float REFLEX_RADIUS = 0.5f;
 constexpr float SWIRL_FACTOR = 4.0f;
 constexpr int SHADOW_GRID = 2;
 constexpr int MAX_REFRACTION_RECURSION_DEPTH = 6;
+constexpr int NUMBER_OF_PHOTONS = 100000;
 
 // Thread-local storage for the view origin, which is used in depth of field calculations
 static thread_local glm::vec3 viewOrigin(0.0f);
@@ -293,6 +294,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
     static bool prevWorldMetallicEnabled = worldMetallicEnabled;
     static bool prevEnvironmentMapEnabled = environmentMapEnabled;
     static bool prevEnvironmentMapSeenByCamera = environmentMapSeenByCamera;
+    static bool prevPhotonMappingEnabled = photonMappingEnabled;
 
     static bool photonMapChanged = true;
 
@@ -309,7 +311,8 @@ void RayTracedRenderer::draw(DrawingWindow &window)
                    (prevWorldRefractiveEnabled != worldRefractiveEnabled) ||
                    (prevWorldMetallicEnabled != worldMetallicEnabled) ||
                    (prevEnvironmentMapEnabled != environmentMapEnabled) ||
-                   (prevEnvironmentMapSeenByCamera != environmentMapSeenByCamera);
+                   (prevEnvironmentMapSeenByCamera != environmentMapSeenByCamera) ||
+                   (prevPhotonMappingEnabled != photonMappingEnabled);
 
     // Check for change
     if (forceRayTraceRedraw || changed)
@@ -331,6 +334,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
         prevEnvironmentMapEnabled = environmentMapEnabled;
         prevEnvironmentMapSeenByCamera = environmentMapSeenByCamera;
         photonMapChanged = true;
+        prevPhotonMappingEnabled = photonMappingEnabled;
     }
 
     // Check if the camera has moved or rotated since the last frame
@@ -1291,7 +1295,7 @@ void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::
         }
 
         viaSpecular = true;
-        bool entering = insideMedium;
+        bool entering = !insideMedium;
         glm::vec3 surfaceNormal = triangle.isWater ? waterNormal(intersection.intersectionPoint, triangle.normal) : triangle.normal;
 
         float side = glm::dot(direction, triangle.normal) > 0.0f ? -1.0f : 1.0f;
@@ -1305,10 +1309,15 @@ void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::
         }
         else
         {
-            refractRay(direction, normal, entering ? 1.0f / triangle.refractiveIndex : triangle.refractiveIndex, direction);
+            if (!refractRay(direction, normal, entering ? 1.0f / triangle.refractiveIndex : triangle.refractiveIndex, direction))
+            {
+                direction = glm::normalize(direction - 2.0f * glm::dot(direction, normal) * normal);
+            }
+            insideMedium = !insideMedium;
         }
 
         tracePhoton(intersection.intersectionPoint + direction * 0.001f, direction, power, !entering, viaSpecular, depth + 1);
+        return;
     }
 
     if (triangle.isMirror && worldMirroringEnabled)
@@ -1342,10 +1351,9 @@ void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::
 void RayTracedRenderer::buildCausticPhotonMap()
 {
     causticPhotonMap.clear();
-    int numPhotons = causticPhotonMap.size();
-    for (int i = 0; i < numPhotons; ++i)
+    for (int i = 0; i < NUMBER_OF_PHOTONS; ++i)
     {
-        tracePhoton(randomPointOnLight(), randomDownwardDirection(), glm::vec3(1.0f), false, false, 0);
+        tracePhoton(randomPointOnLight(), randomDownwardDirection(), glm::vec3(LIGHT_INTENSITY * 0.5f / NUMBER_OF_PHOTONS), false, false, 0);
     }
 
     causticPhotonMap.build();
