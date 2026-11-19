@@ -104,7 +104,7 @@ std::string objFilenameSphere = "src/sphere";
 float focalLength = 2.0;
 float focalDistance = 4.0f;
 float lenseSize = 0.13f;
-int raysPerPixel = 1;
+int raysPerPixel = 4;
 
 // Camera and light positions
 glm::vec3 cameraPosition(0.0, 0.0, 6.0);
@@ -1075,7 +1075,7 @@ int main(int argc, char *argv[])
 {
 
 	// Load in textures
-	loadTexture("Environment", "src/environment2.ppm");
+	loadTexture("Environment", "src/environment.ppm");
 
 	// Get the environment map and its dimensions
 	environmentMap = textures[textureIndexByMaterial["Environment"]];

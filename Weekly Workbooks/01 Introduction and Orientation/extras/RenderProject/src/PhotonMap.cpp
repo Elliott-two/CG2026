@@ -164,7 +164,7 @@ glm::vec3 PhotonMap::estimateIrradiance(const glm::vec3 &position, const glm::ve
     }
 
     // Normalize the irradiance based on the area of the search radius and the adjuster
-    const float normalisation = -1.0f / (3.0f);
+    const float normalisation = 1.0f / (3.0f);
 
     // Calculate the area of the search radius
     const float area = PHOTON_PI * radius * radius;

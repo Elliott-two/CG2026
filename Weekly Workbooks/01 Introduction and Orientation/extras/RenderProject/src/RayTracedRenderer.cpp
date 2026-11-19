@@ -101,14 +101,14 @@ constexpr float SKY_COLOUR_MISS = 0.05f;          // Ambient light intensity if 
 constexpr int SPECULAR_EXPONENT_LOG2 = 5;         // Log2 of the specular exponent for Phong shading
 constexpr float REFLEX_RADIUS = 0.5f;             // Radius for the reflex lens effect
 constexpr float SWIRL_FACTOR = 4.0f;              // Factor for the swirl effect
-constexpr int SHADOW_GRID = 2;                    // Grid size for soft shadows
+constexpr int SHADOW_GRID = 8;                    // Grid size for soft shadows
 constexpr int MAX_REFRACTION_RECURSION_DEPTH = 6; // Maximum recursion depth for refraction rays
 constexpr int NUMBER_OF_PHOTONS = 250000;         // Number of photons to trace for photon mapping
 constexpr int MAX_PHOTON_RECURSION_DEPTH = 8;     // Maximum recursion depth for photon tracing
 constexpr float CAUSTIC_RADIUS = 0.04f;           // Radius for caustic photon gathering
 constexpr float GLOBAL_RADIUS = 0.16f;            // Radius for global photon gathering
 constexpr float INDIRECT_STRENGTH = 0.40f;        // Strength of indirect lighting from photon mapping
-glm::vec3 MIN_INDIRECT_COLOUR(0.05f);
+const glm::vec3 MIN_INDIRECT_COLOUR(0.05f);
 constexpr uint32_t CAUSTIC_PHOTON_COLOUR = 0xFFFF00FF; // Colour for caustic photons in debugging mode (magenta)
 constexpr uint32_t GLOBAL_PHOTON_COLOUR = 0xFFFDF4DC;  // Colour for global photons in debugging mode (warm white)
 constexpr float SURFACE_OFFSET = 0.001f;               // Offset to avoid self-intersection when tracing rays from surfaces
@@ -669,10 +669,7 @@ Colour RayTracedRenderer::calculateLighting(glm::vec3 point, glm::vec3 normal, C
         }
         glm::vec3 usedAmbient = INDIRECT_STRENGTH * globalPhotonMap.estimateIrradiance(point, surfaceNormal, GLOBAL_RADIUS);
 
-        if (usedAmbient.x < 0.0f || usedAmbient.y < 0.0f || usedAmbient.z < 0.0f)
-        {
-            usedAmbient = MIN_INDIRECT_COLOUR;
-        }
+        usedAmbient = glm::max(usedAmbient, MIN_INDIRECT_COLOUR);
 
         brightness = glm::clamp(total[0] + usedAmbient, 0.0f, 1.0f);
     }
