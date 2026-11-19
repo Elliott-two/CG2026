@@ -199,12 +199,32 @@ static glm::vec3 howOccluded(const glm::vec3 &origin, const glm::vec3 &direction
         {
             return glm::vec3(0.0f); // Occluded
         }
+
+        const bool entering = glm::dot(direction, triangle.normal) < 0.0f;
+        bool duplicateHit = false;
+        for (const hitShadow &previousHit : hits)
+        {
+            const bool previousEntering = glm::dot(direction, previousHit.triangle->normal) < 0.0f;
+            if (previousHit.triangle->objectName == triangle.objectName &&
+                previousEntering == entering &&
+                std::abs(previousHit.distance - triangleDistance) < 1e-5f)
+            {
+                duplicateHit = true;
+                break;
+            }
+        }
+
+        if (duplicateHit)
+        {
+            continue;
+        }
+
         hits.push_back({triangleDistance, &triangle});
     }
     if (hits.empty())
         return glm::vec3(1.0f); // Not occluded
 
-    // Sort the hits by distance and remove duplicates based on object name and distance
+    // Sort the hits by distance and process them from nearest to furthest
     std::sort(hits.begin(), hits.end(), [&direction](const hitShadow &objectA, const hitShadow &objectB)
               {
         if (std::abs(objectA.distance - objectB.distance) < 1e-5f)
@@ -531,12 +551,6 @@ void RayTracedRenderer::draw(DrawingWindow &window)
                 {
                     continue; // Photon is behind the camera
                 }
-
-                if (relative.z == 0.0f)
-                {
-                    relative.z = 0.0001f;
-                }
-
                 float u = (-focalLength * (relative.x / relative.z) * IMAGE_SCALE) + (WIDTH / 2.0f);
                 float v = (focalLength * (relative.y / relative.z) * IMAGE_SCALE) + (HEIGHT / 2.0f);
                 float depth = -1.0f / relative.z;
@@ -1338,8 +1352,8 @@ Colour RayTracedRenderer::refractedRay(const RayTriangleIntersection &intersecti
     glm::vec3 refractedDirection;
     float indexOfRefraction = n1 / n2;
 
-    // If refraction is not possible (total internal reflection), return the attenuated reflected colour
-    if (!refractRay(direction, normal, indexOfRefraction, refractedDirection) || !refractRay(direction, flatNormal, indexOfRefraction, refractedDirection))
+    bool refracted = refractRay(direction, normal, indexOfRefraction, refractedDirection);
+    if (!refracted || glm::dot(refractedDirection, flatNormal) > 0.0f)
     {
         return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium);
     }
