@@ -25,14 +25,17 @@ bool isLookAtEnabled = false;
 // Bool to check if we need to redraw
 bool forceRayTraceRedraw = false;
 
+bool forcePhotonMapRedraw = false;
+
 // Bool for different shading techniques
 bool GouraudShadingEnabled = false;
 bool PhongShadingEnabled = false;
 
-// Bool to check if the sphere and boxes are showing
+// Bool to check if the sphere, boxes, and bunny are showing
 bool isSphereShowing = true;
 bool isBlueBoxShowing = true;
 bool isRedBoxShowing = true;
+bool isBunnyShowing = true;
 
 // Flag to enable/disable depth of field effect
 bool depthOfFieldEnabled = false;
@@ -139,7 +142,7 @@ struct MaterialProperties
 };
 
 // Define a map to associate material names with their properties
-const std::unordered_map<std::string, MaterialProperties> materialProperties = {
+std::unordered_map<std::string, MaterialProperties> materialProperties = {
 	// Reflective
 	{"Mirror", {true, false, false, false, 0.0f, 1.0f, 1.0f, glm::vec3(0.0f), glm::vec3(0.0f)}},
 
@@ -153,6 +156,79 @@ const std::unordered_map<std::string, MaterialProperties> materialProperties = {
 	{"Copper", {false, false, false, true, 0.33f, 1.0f, 1.0f, glm::vec3(0.95f, 0.64f, 0.54f), glm::vec3(0.0f)}},
 	{"Aluminium", {false, false, false, true, 0.53f, 1.0f, 3.0f, glm::vec3(0.91f, 0.92f, 0.92f), glm::vec3(0.0f)}},
 	{"Iron", {false, false, false, true, 0.8f, 1.0f, 1.0f, glm::vec3(0.56f, 0.57f, 0.58f), glm::vec3(0.04f)}}};
+
+void applyMaterialToObject(const std::string &objectName, const std::string &materialName)
+{
+	MaterialProperties properties = {
+		false, false, false, false, 0.0f, 1.0f, 1.0f, glm::vec3(1.0f), glm::vec3(0.0f)};
+	auto material = materialProperties.find(materialName);
+	if (material != materialProperties.end())
+		properties = material->second;
+
+	Colour colour = Colour(255, 255, 255);
+	auto paletteColour = paletteMap.find(materialName);
+	if (paletteColour != paletteMap.end())
+		colour = paletteColour->second;
+
+	for (ModelTriangle &triangle : triangles)
+	{
+		if (triangle.objectName != objectName)
+			continue;
+
+		triangle.colour = colour;
+		triangle.textureIndex = -1;
+		triangle.isMirror = properties.isMirror;
+		triangle.isWater = properties.isWater;
+		triangle.isRefractive = properties.isRefractive;
+		triangle.isMetallic = properties.isMetallic;
+		triangle.absorption = properties.absorption;
+		triangle.fresnelReflectance = properties.fresnelReflectance;
+		triangle.roughness = properties.roughness;
+		triangle.stretchFactor = properties.stretchFactor;
+		triangle.refractiveIndex = properties.isRefractive ? properties.refractiveIndex : 1.0f;
+	}
+
+	forceRayTraceRedraw = true;
+	forcePhotonMapRedraw = true;
+}
+
+void setRoughnessForObject(const std::string &objectName, float roughness)
+{
+	for (ModelTriangle &triangle : triangles)
+	{
+		if (triangle.objectName == objectName && triangle.isMetallic)
+			triangle.roughness = roughness;
+	}
+
+	forceRayTraceRedraw = true;
+	forcePhotonMapRedraw = true;
+}
+
+void setAbsorptionForObject(const std::string &objectName, const glm::vec3 &absorption)
+{
+	for (ModelTriangle &triangle : triangles)
+	{
+		if (triangle.objectName == objectName && triangle.isWater)
+		{
+			triangle.absorption = absorption;
+		}
+	}
+
+	forceRayTraceRedraw = true;
+	forcePhotonMapRedraw = true;
+}
+
+void registerPaletteColoursAsMaterials()
+{
+	const MaterialProperties defaultProperties = {
+		false, false, false, false, 0.0f, 1.0f, 1.0f, glm::vec3(1.0f), glm::vec3(0.0f)};
+
+	for (const Colour &colour : palette)
+	{
+		materialProperties.emplace(colour.name, defaultProperties);
+		paletteMap[colour.name] = colour;
+	}
+}
 
 void loadTexture(const std::string &materialName, const std::string &path)
 {
@@ -254,9 +330,24 @@ void print(std::string s)
 	std::cout << s << std::endl;
 }
 
+// Input keymap:
+// Mouse left-click: focus the ray tracer on the selected pixel
+// 1/2/3: wireframe / rasterised / ray-traced renderer
+// =/-: move camera forward / backward; arrow keys: move camera up/down/left/right
+// W/S: tilt camera up/down; A/D: pan camera left/right
+// Shift+S: toggle soft shadows; //.: toggle clockwise/counterclockwise orbiting
+// 4/5: toggle Gouraud / Phong shading; L: toggle look-at mode
+// R/G/M: toggle mirrored / glassy / metallic materials
+// E/]: toggle environment maps / environment-map visibility
+// Enter: toggle fullscreen
+// C/V/B/N: toggle sphere / blue box / red box / bunny visibility
+// F/Z/X: toggle depth of field / swirl / reflex lens effects
+// P: toggle frame saving; Backspace: start animation
+// K/J: toggle photon mapping / photon debugging
 // Handle all events
 void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = currentRenderer)
 {
+
 	if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
 	{
 		if (currentRenderer == &rayTracedRenderer)
@@ -276,19 +367,22 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 	switch (event.key.keysym.sym)
 	{
 	case SDLK_1:
-		print("Switching to wireframe");
+		print("Switching to Wireframe");
 		currentRenderer = &pointCloudRenderer;
 		WireframeBool = true;
 		break;
 	case SDLK_2:
-		print("Switching to point cloud");
+		print("Switching to Rasterised Renderer");
 		WireframeBool = false;
 		currentRenderer = &pointCloudRenderer;
 		break;
 	case SDLK_3:
-		print("Switching to ray tracing render");
-		currentRenderer = &rayTracedRenderer;
+		print("Switching to Ray Tracing Renderer");
+		GouraudShadingEnabled = false;
+		PhongShadingEnabled = false;
+		WireframeBool = false;
 		forceRayTraceRedraw = true;
+		currentRenderer = &rayTracedRenderer;
 		break;
 	case SDLK_EQUALS:
 		print("Moving camera in");
@@ -327,8 +421,24 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 		tiltCamera(cameraOrientation, 6);
 		break;
 	case SDLK_s:
-		print("Tilting camera down");
-		tiltCamera(cameraOrientation, -6);
+		if (event.key.keysym.mod & KMOD_SHIFT)
+		{
+			if (softShadowsEnabled)
+			{
+				print("Disabling soft shadows");
+				softShadowsEnabled = false;
+			}
+			else
+			{
+				print("Enabling soft shadows");
+				softShadowsEnabled = true;
+			}
+		}
+		else
+		{
+			print("Tilting camera down");
+			tiltCamera(cameraOrientation, -6);
+		}
 		break;
 	case SDLK_COMMA:
 		if (isOrbiting == 0)
@@ -366,6 +476,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 			print("Enabling Gouraud shading");
 			GouraudShadingEnabled = true;
 			PhongShadingEnabled = false;
+			currentRenderer = &rayTracedRenderer;
 		}
 
 		break;
@@ -381,6 +492,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 			print("Enabling Phong shading");
 			PhongShadingEnabled = true;
 			GouraudShadingEnabled = false;
+			currentRenderer = &rayTracedRenderer;
 		}
 		break;
 	case SDLK_l:
@@ -503,6 +615,19 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 			isRedBoxShowing = true;
 		}
 		break;
+	case SDLK_n:
+		print("Toggle Bunny visibility");
+		if (isBunnyShowing)
+		{
+			print("Hiding Bunny");
+			isBunnyShowing = false;
+		}
+		else
+		{
+			print("Showing Bunny");
+			isBunnyShowing = true;
+		}
+		break;
 	case SDLK_f:
 		print("Toggle Depth of Field");
 		if (depthOfFieldEnabled)
@@ -559,19 +684,6 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 			savingFrames = true;
 		}
 		break;
-	case SDLK_o:
-		print("Toggle soft shadows");
-		if (softShadowsEnabled)
-		{
-			print("Disabling soft shadows");
-			softShadowsEnabled = false;
-		}
-		else
-		{
-			print("Enabling soft shadows");
-			softShadowsEnabled = true;
-		}
-		break;
 	case SDLK_BACKSPACE:
 		print("Starting Animation");
 		isAnimating = true;
@@ -610,72 +722,93 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 		break;
 	}
 }
+const int ANIMATION_SPEED = 4;
 int ZoomInStartTime = 0;
-int ZoomInEndTime = ZoomInStartTime + 480;
+int ZoomInEndTime = ZoomInStartTime + 480 / ANIMATION_SPEED;
 int ZoomOutStartTime = ZoomInEndTime;
-int ZoomOutEndTime = ZoomOutStartTime + 120;
+int ZoomOutEndTime = ZoomOutStartTime + 120 / ANIMATION_SPEED;
 int BounceStartTime = ZoomOutEndTime;
-int BounceEndTime = BounceStartTime + 120;
+int BounceEndTime = BounceStartTime + 120 / ANIMATION_SPEED;
 int WireFrameHoldStartTime = BounceEndTime;
-int WireFrameHoldEndTime = WireFrameHoldStartTime + 400;
+int WireFrameHoldEndTime = WireFrameHoldStartTime + 400 / ANIMATION_SPEED;
 int WireFrameEndTime = WireFrameHoldEndTime;
-int WireFrameBuffer = WireFrameEndTime + 50;
-int OrbitStartTime = WireFrameBuffer + 60;
-int OrbitBuffer = OrbitStartTime + 2;
-int OrbitEndTime = OrbitBuffer + 1460;
-int OrbitBuffer2 = OrbitEndTime + 420;
+int WireFrameBuffer = WireFrameEndTime + 50 / ANIMATION_SPEED;
+int OrbitStartTime = WireFrameBuffer + 60 / ANIMATION_SPEED;
+int OrbitBuffer = OrbitStartTime + 16 / ANIMATION_SPEED;
+int OrbitEndTime = OrbitBuffer + 1460 / ANIMATION_SPEED;
+int OrbitBuffer2 = OrbitEndTime + 420 / ANIMATION_SPEED;
 int PanStartTime = OrbitBuffer2;
-int PanEndTime = PanStartTime + 400;
-int PanBackStartTime = PanEndTime + 200;
-int PanBackEndTime = PanBackStartTime + 400;
-int GouraudStartTime = PanBackEndTime + 80;
-int GouraudEndTime = GouraudStartTime + 120;
+int PanEndTime = PanStartTime + 400 / ANIMATION_SPEED;
+int PanBackStartTime = PanEndTime + 200 / ANIMATION_SPEED;
+int PanBackEndTime = PanBackStartTime + 400 / ANIMATION_SPEED;
+int GouraudStartTime = PanBackEndTime + 80 / ANIMATION_SPEED;
+int GouraudEndTime = GouraudStartTime + 120 / ANIMATION_SPEED;
 int PhongStartTime = GouraudEndTime;
-int PhongEndTime = PhongStartTime + 120;
-int softShadowsStartTime = PhongEndTime + 120;
-int softShadowsEndTime = softShadowsStartTime + 240;
+int PhongEndTime = PhongStartTime + 120 / ANIMATION_SPEED;
+int softShadowsStartTime = PhongEndTime + 120 / ANIMATION_SPEED;
+int softShadowsEndTime = softShadowsStartTime + 240 / ANIMATION_SPEED;
 int PanBack2StartTime = softShadowsEndTime;
-int PanBack2EndTime = PanBack2StartTime + 120;
+int PanBack2EndTime = PanBack2StartTime + 120 / ANIMATION_SPEED;
 int ZoomInStartTime2 = PanBack2EndTime;
-int ZoomInEndTime2 = ZoomInStartTime2 + 400;
+int ZoomInEndTime2 = ZoomInStartTime2 + 400 / ANIMATION_SPEED;
 int ZoomOutStartTime2 = ZoomInEndTime2;
-int ZoomOutEndTime2 = ZoomOutStartTime2 + 400;
-int unPanCameraStartTime = ZoomOutEndTime2 + 320;
-int unPanCameraEndTime = unPanCameraStartTime + 120;
+int ZoomOutEndTime2 = ZoomOutStartTime2 + 400 / ANIMATION_SPEED;
+int unPanCameraStartTime = ZoomOutEndTime2 + 320 / ANIMATION_SPEED;
+int unPanCameraEndTime = unPanCameraStartTime + 120 / ANIMATION_SPEED;
 int DepthOfFieldStartTime = unPanCameraEndTime;
-int DepthOfFieldEndTime = DepthOfFieldStartTime + 100;
+int DepthOfFieldEndTime = DepthOfFieldStartTime + 100 / ANIMATION_SPEED;
 int SwirlStartTime = DepthOfFieldEndTime;
-int SwirlEndTime = SwirlStartTime + 100;
+int SwirlEndTime = SwirlStartTime + 100 / ANIMATION_SPEED;
 int ReflexLensStartTime = SwirlEndTime;
-int ReflexLensEndTime = ReflexLensStartTime + 100;
+int ReflexLensEndTime = ReflexLensStartTime + 100 / ANIMATION_SPEED;
 int FocusOnWallStartTime = ReflexLensEndTime;
-int FocusOnWallEndTime = FocusOnWallStartTime + 100;
+int FocusOnWallEndTime = FocusOnWallStartTime + 100 / ANIMATION_SPEED;
+
+// Change these values and call the setters below from updateAnimation() to
+// animate material properties without replacing the whole material.
+float animationMetalRoughness = 0.15f;
+glm::vec3 animationWaterAbsorption(0.90f, 0.25f, 0.15f);
 
 void updateAnimation()
 {
+
 	if (!isAnimating)
 		return;
 
 	// Phase 1: Orbit and switch to Phong shading for 60 ticks (frames)
 	if (animationTick == 0)
 	{
+		savingFrames = true;
+		applyMaterialToObject("sphere", "Red");
+		applyMaterialToObject("tall_box", "Blue");
+		applyMaterialToObject("short_box", "Red");
+		applyMaterialToObject("left_wall", "Magenta");
+		applyMaterialToObject("right_wall", "Yellow");
+		applyMaterialToObject("ceiling", "Cyan");
+		applyMaterialToObject("back_wall", "White");
 		currentRenderer = &pointCloudRenderer;
 		WireframeBool = true;
 		// window.toggleFullscreen();
 		cameraPosition = glm::vec3(0.0f, 0.0f, 18.0f);
 		cameraOrientation = glm::mat3(1.0f);
 	}
+	// Example:
+	// if (animationTick >= someStartTime && animationTick < someEndTime)
+	// {
+	//     setRoughnessForObject("metal_object", animationMetalRoughness);
+	//     setAbsorptionForObject("water_object", animationWaterAbsorption);
+	// }
 	if (animationTick >= ZoomInStartTime && animationTick < ZoomInEndTime)
 	{
-		cameraPosition.z -= 0.025;
+		cameraPosition.z -= 0.025 * ANIMATION_SPEED;
 	}
 	if (animationTick >= ZoomOutStartTime && animationTick < ZoomOutEndTime)
 	{
-		cameraPosition.z += 0.025;
+		cameraPosition.z += 0.025 * ANIMATION_SPEED;
 	}
 	if (animationTick >= BounceStartTime && animationTick < BounceEndTime)
 	{
-		cameraPosition.z -= 0.025;
+		cameraPosition.z -= 0.025 * ANIMATION_SPEED;
 	}
 	if (animationTick >= WireFrameHoldStartTime && animationTick < WireFrameHoldEndTime)
 	{
@@ -688,8 +821,8 @@ void updateAnimation()
 	if (animationTick >= OrbitStartTime && animationTick < OrbitBuffer)
 	{
 		cameraPosition = glm::vec3(0.0f, 0.0f, 6.0f);
-		isOrbiting = 0.25f;		// Start orbiting clockwise
-		isLookAtEnabled = true; // Enable LookAt
+		isOrbiting = 0.25f * ANIMATION_SPEED; // Start orbiting clockwise
+		isLookAtEnabled = true;				  // Enable LookAt
 	}
 	if (animationTick >= OrbitEndTime && animationTick < OrbitBuffer2)
 	{
@@ -700,18 +833,18 @@ void updateAnimation()
 	{
 		// currentRenderer = &rayTracedRenderer;
 		isLookAtEnabled = false; // Disable LookAt
-		panCamera(cameraOrientation, 0.035f);
+		panCamera(cameraOrientation, 0.035f * ANIMATION_SPEED);
 	}
 	if (animationTick >= PanBackStartTime && animationTick < PanBackEndTime)
 	{
 		// currentRenderer = &rayTracedRenderer;
-		panCamera(cameraOrientation, -0.035f);
+		panCamera(cameraOrientation, -0.035f * ANIMATION_SPEED);
 	}
 	if (animationTick >= GouraudStartTime && animationTick < GouraudEndTime)
 	{
 		// currentRenderer = &rayTracedRenderer;
 		GouraudShadingEnabled = true;
-		cameraPosition.z -= 0.005;
+		cameraPosition.z -= 0.005 * ANIMATION_SPEED;
 	}
 	if (animationTick >= PhongStartTime && animationTick < PhongEndTime)
 	{
@@ -730,22 +863,22 @@ void updateAnimation()
 	{
 		// currentRenderer = &rayTracedRenderer;
 		softShadowsEnabled = false;
-		panCamera(cameraOrientation, 0.02f);
+		panCamera(cameraOrientation, 0.02f * ANIMATION_SPEED);
 	}
 	if (animationTick >= ZoomInStartTime2 && animationTick < ZoomInEndTime2)
 	{
 		// currentRenderer = &rayTracedRenderer;
-		cameraPosition.z -= 0.005;
+		cameraPosition.z -= 0.005 * ANIMATION_SPEED;
 	}
 	if (animationTick >= ZoomOutStartTime2 && animationTick < ZoomOutEndTime2)
 	{
 		// currentRenderer = &rayTracedRenderer;
-		cameraPosition.z += 0.005;
+		cameraPosition.z += 0.005 * ANIMATION_SPEED;
 	}
 	if (animationTick >= unPanCameraStartTime && animationTick < unPanCameraEndTime)
 	{
 		// currentRenderer = &rayTracedRenderer;
-		panCamera(cameraOrientation, -0.02f);
+		panCamera(cameraOrientation, -0.02f * ANIMATION_SPEED);
 	}
 	if (animationTick >= DepthOfFieldStartTime && animationTick < DepthOfFieldEndTime)
 	{
@@ -1093,6 +1226,7 @@ int main(int argc, char *argv[])
 	{
 		paletteMap[palette[i].name] = palette[i];
 	}
+	registerPaletteColoursAsMaterials();
 
 	// Parse the triangles
 	for (size_t i = 0; i < filenNames.size(); ++i)
@@ -1180,7 +1314,7 @@ int main(int argc, char *argv[])
 		// Bool to check if the camera has changed since the last frame
 		bool cameraChanged = (tempCameraPosition != cameraPosition || tempCameraOrientation != cameraOrientation);
 		// If we are saving frames, a new frame has been rendered, and either the camera has changed or the current renderer is the ray traced renderer, then save the frame to a file
-		if (savingFrames && newFrameRendered && (cameraChanged || currentRenderer == &rayTracedRenderer))
+		if (savingFrames && newFrameRendered && (isAnimating || cameraChanged || currentRenderer == &rayTracedRenderer))
 		{
 			std::string paddedCounter = std::to_string(frameCounter);
 			while (paddedCounter.length() < 6)

@@ -83,14 +83,17 @@ extern bool reflexLensEnabled;
 // Flag to enable/disable soft shadows
 extern bool softShadowsEnabled;
 
+extern bool forcePhotonMapRedraw;
+
 // Position of the light source and min/max values for light calculations
 extern glm::vec3 lightMin;
 extern glm::vec3 lightMax;
 
-// Bools to check if the sphere and boxes are showing, for video purposes
+// Bools to check if the sphere, boxes, and bunny are showing, for video purposes
 extern bool isSphereShowing;
 extern bool isBlueBoxShowing;
 extern bool isRedBoxShowing;
+extern bool isBunnyShowing;
 
 // All of my preset needed things
 constexpr float RAY_TRACED_PI = 3.14159265358979323846f;
@@ -351,6 +354,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
     static bool prevSphereShowing = isSphereShowing;                         // Previous sphere showing state
     static bool prevBlueBoxShowing = isBlueBoxShowing;                       // Previous blue box showing state
     static bool prevRedBoxShowing = isRedBoxShowing;                         // Previous red box showing state
+    static bool prevBunnyShowing = isBunnyShowing;                           // Previous bunny showing state
     static bool prevWorldMirroringEnabled = worldMirroringEnabled;           // Previous world mirroring state
     static bool prevDepthOfFieldEnabled = depthOfFieldEnabled;               // Previous depth of field state
     static float prevFocalDistance = focalDistance;                          // Previous focal distance
@@ -371,6 +375,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
                    (prevSphereShowing != isSphereShowing) ||
                    (prevBlueBoxShowing != isBlueBoxShowing) ||
                    (prevRedBoxShowing != isRedBoxShowing) ||
+                   (prevBunnyShowing != isBunnyShowing) ||
                    (prevWorldMirroringEnabled != worldMirroringEnabled) ||
                    (prevDepthOfFieldEnabled != depthOfFieldEnabled) ||
                    (prevFocalDistance != focalDistance) ||
@@ -388,9 +393,10 @@ void RayTracedRenderer::draw(DrawingWindow &window)
     bool lightPathsChanged = (prevSphereShowing != isSphereShowing) ||
                              (prevBlueBoxShowing != isBlueBoxShowing) ||
                              (prevRedBoxShowing != isRedBoxShowing) ||
+                             (prevBunnyShowing != isBunnyShowing) ||
                              (prevWorldMirroringEnabled != worldMirroringEnabled) ||
                              (prevWorldRefractiveEnabled != worldRefractiveEnabled) ||
-                             (prevWorldMetallicEnabled != worldMetallicEnabled);
+                             (prevWorldMetallicEnabled != worldMetallicEnabled) || forcePhotonMapRedraw;
     // Check for change
     if (forceRayTraceRedraw || changed || lightPathsChanged)
     {
@@ -400,6 +406,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
         prevSphereShowing = isSphereShowing;
         prevBlueBoxShowing = isBlueBoxShowing;
         prevRedBoxShowing = isRedBoxShowing;
+        prevBunnyShowing = isBunnyShowing;
         prevWorldMirroringEnabled = worldMirroringEnabled;
         prevDepthOfFieldEnabled = depthOfFieldEnabled;
         prevFocalDistance = focalDistance;
@@ -417,6 +424,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
 
         prevPhotonMappingEnabled = photonMappingEnabled;
         prevPhotonDebuggingEnabled = photonDebuggingEnabled;
+        forcePhotonMapRedraw = false; // Reset the force photon map redraw flag
     }
 
     // Check if the camera has moved or rotated since the last frame
@@ -436,8 +444,9 @@ void RayTracedRenderer::draw(DrawingWindow &window)
     {
         const ModelTriangle &triangle = triangles[index];
         if ((triangle.objectName == "sphere" && !isSphereShowing) ||
-            (triangle.objectName == "tall_box" && !isBlueBoxShowing) ||
-            (triangle.objectName == "short_box" && !isRedBoxShowing))
+            ((triangle.objectName == "tall_box" || triangle.objectName == "tall_box_mirror") && !isBlueBoxShowing) ||
+            (triangle.objectName == "short_box" && !isRedBoxShowing) ||
+            (triangle.objectName == "Bunny" && !isBunnyShowing))
             continue;
         nonCulledTriangles.push_back(triangle);
         visibleToOriginalIndex.push_back(static_cast<int>(index));
