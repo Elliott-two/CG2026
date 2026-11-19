@@ -106,7 +106,7 @@ constexpr float REFLEX_RADIUS = 0.5f;             // Radius for the reflex lens 
 constexpr float SWIRL_FACTOR = 4.0f;              // Factor for the swirl effect
 constexpr int SHADOW_GRID = 8;                    // Grid size for soft shadows
 constexpr int MAX_REFRACTION_RECURSION_DEPTH = 6; // Maximum recursion depth for refraction rays
-constexpr int NUMBER_OF_PHOTONS = 250000;         // Number of photons to trace for photon mapping
+constexpr int NUMBER_OF_PHOTONS = 100000;         // Number of photons to trace for photon mapping
 constexpr int MAX_PHOTON_RECURSION_DEPTH = 8;     // Maximum recursion depth for photon tracing
 constexpr float CAUSTIC_RADIUS = 0.04f;           // Radius for caustic photon gathering
 constexpr float GLOBAL_RADIUS = 0.16f;            // Radius for global photon gathering
@@ -205,61 +205,81 @@ static glm::vec3 howOccluded(const glm::vec3 &origin, const glm::vec3 &direction
         return glm::vec3(1.0f); // Not occluded
 
     // Sort the hits by distance and remove duplicates based on object name and distance
-    std::sort(hits.begin(), hits.end(), [](const hitShadow &shadowA, const hitShadow &shadowB)
-              { return shadowA.distance < shadowB.distance; });
-
-    // Remove duplicates based on object name and distance
-    size_t uniqueCount = 0;
-    for (size_t index = 0; index < hits.size(); index++)
-    {
-        // Skip duplicate triangles
-        if (uniqueCount > 0 &&
-            hits[uniqueCount - 1].triangle->objectName == hits[index].triangle->objectName &&
-            std::abs(hits[index].distance - hits[uniqueCount - 1].distance) < 1e-4f)
+    std::sort(hits.begin(), hits.end(), [&direction](const hitShadow &objectA, const hitShadow &objectB)
+              {
+        if (std::abs(objectA.distance - objectB.distance) < 1e-5f)
         {
-            continue;
+            bool aEntering = glm::dot(direction, objectA.triangle->normal) < 0.0f;
+            bool bEntering = glm::dot(direction, objectB.triangle->normal) < 0.0f;
+            if (aEntering != bEntering)
+                return aEntering;
         }
-        hits[uniqueCount++] = hits[index];
-    }
-    // Resize the hits vector to contain only unique hits
-    hits.resize(uniqueCount);
+        return objectA.distance < objectB.distance; });
 
-    // Calculate the transmission through the refractive triangles using the Beer-Lambert law
+    static thread_local std::vector<std::string> objectNames;
+    static thread_local std::vector<bool> insideFlags;
+    static thread_local std::vector<float> entryDistances;
+    static thread_local std::vector<glm::vec3> absorptions;
+
+    objectNames.clear();
+    insideFlags.clear();
+    entryDistances.clear();
+    absorptions.clear();
     glm::vec3 transmission(1.0f);
 
-    // Loop through the hits and calculate the transmission through each refractive triangle
-    for (size_t index = 0; index < hits.size();)
+    for (const hitShadow &hit : hits)
     {
-        // Check if the ray is entering or exiting the refractive triangle based on the dot product of the ray direction and the triangle normal
-        const bool entering = glm::dot(direction, hits[index].triangle->normal) < 0.0f;
+        const ModelTriangle &triangle = *hit.triangle;
+        const bool entering = glm::dot(direction, triangle.normal) < 0.0f;
 
-        // If the ray is exiting, calculate the transmission through the triangle using the Beer-Lambert law and continue to the next hit
-        if (!entering)
+        size_t objbectIndex = objectNames.size();
+        for (size_t i = 0; i < objectNames.size(); ++i)
         {
-            transmission *= computeBeerLambertTransmission(hits[index].triangle->absorption, hits[index].distance);
-            index += 1;
-            continue;
-        }
-
-        // Entry and exit distances for the refractive triangle, and the index of the next hit to process
-        float entryDistance = hits[index].distance;
-        float exitDistance = maxDistance;
-        size_t nextIndex = index + 1;
-
-        for (size_t j = index + 1; j < hits.size(); j++)
-        {
-            if (hits[j].triangle->objectName == hits[index].triangle->objectName)
+            if (objectNames[i] == triangle.objectName)
             {
-                exitDistance = hits[j].distance;
-                nextIndex = j + 1;
+                objbectIndex = i;
                 break;
             }
         }
 
-        // Calculate the thickness of the refractive triangle and update the transmission using the Beer-Lambert law
-        float thickness = std::max(0.0f, exitDistance - entryDistance);
-        transmission *= computeBeerLambertTransmission(hits[index].triangle->absorption, thickness);
-        index = nextIndex;
+        if (objbectIndex == objectNames.size())
+        {
+            objectNames.push_back(triangle.objectName);
+            insideFlags.push_back(false);
+            entryDistances.push_back(0.0f);
+            absorptions.push_back(triangle.absorption);
+        }
+
+        if (!insideFlags[objbectIndex])
+        {
+            if (entering)
+            {
+                insideFlags[objbectIndex] = true;
+                entryDistances[objbectIndex] = hit.distance;
+                absorptions[objbectIndex] = triangle.absorption;
+            }
+            else
+            {
+                float thickness = std::max(0.0f, hit.distance);
+                transmission *= computeBeerLambertTransmission(triangle.absorption, thickness);
+            }
+        }
+        else
+        {
+
+            float thickness = std::max(0.0f, hit.distance - entryDistances[objbectIndex]);
+            transmission *= computeBeerLambertTransmission(absorptions[objbectIndex], thickness);
+            insideFlags[objbectIndex] = false;
+        }
+    }
+
+    for (size_t i = 0; i < objectNames.size(); ++i)
+    {
+        if (insideFlags[i])
+        {
+            float thickness = std::max(0.0f, maxDistance - entryDistances[i]);
+            transmission *= computeBeerLambertTransmission(absorptions[i], thickness);
+        }
     }
 
     return transmission;
@@ -506,17 +526,24 @@ void RayTracedRenderer::draw(DrawingWindow &window)
         {
             for (const Photon &photon : photonMaps[mapIndex]->allPhotons())
             {
-                glm::vec3 screenPosition = glm::transpose(cameraOrientation) * (photon.position - cameraPosition);
-                if (screenPosition.z >= 0.0f)
+                glm::vec3 relative = glm::inverse(cameraOrientation) * (photon.position - cameraPosition);
+                if (relative.z >= 0.0f)
                 {
                     continue; // Photon is behind the camera
                 }
 
-                float u = screenPosition.x / -screenPosition.z;
-                float v = screenPosition.y / -screenPosition.z;
+                if (relative.z == 0.0f)
+                {
+                    relative.z = 0.0001f;
+                }
 
-                int x = static_cast<int>(u * IMAGE_SCALE * focalLength + WIDTH / 2.0f);
-                int y = static_cast<int>(HEIGHT / 2.0f - v * IMAGE_SCALE * focalLength);
+                float u = (-focalLength * (relative.x / relative.z) * IMAGE_SCALE) + (WIDTH / 2.0f);
+                float v = (focalLength * (relative.y / relative.z) * IMAGE_SCALE) + (HEIGHT / 2.0f);
+                float depth = -1.0f / relative.z;
+                CanvasPoint projectedPoint(u, v, depth);
+
+                int x = static_cast<int>(projectedPoint.x);
+                int y = static_cast<int>(projectedPoint.y);
                 if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT)
                 {
                     continue;
@@ -792,21 +819,24 @@ Colour RayTracedRenderer::texturedShading(RayTriangleIntersection intersection)
                      weights.y * triangle.texturePoints[1].y +
                      weights.z * triangle.texturePoints[2].y;
 
+    return sampleTexture(texture, textureX, textureY);
+}
+
+Colour RayTracedRenderer::sampleTexture(const TextureMap &texture, float u, float v)
+{
     // Wrap the texture coordinates to ensure they are within the texture bounds
-    textureX = textureX - std::floor(textureX / texture.width) * texture.width;
-    textureY = textureY - std::floor(textureY / texture.height) * texture.height;
+    u = u - std::floor(u / texture.width) * texture.width;
+    v = v - std::floor(v / texture.height) * texture.height;
+
     // Round to the nearest pixel
-    int texX = static_cast<int>(std::round(textureX));
-    int texY = static_cast<int>(std::round(textureY));
+    int texX = static_cast<int>(std::round(u));
+    int texY = static_cast<int>(std::round(v));
 
     // Clamp to the texture, same as the rasteriser
     texX = std::max(0, std::min(texX, static_cast<int>(texture.width) - 1));
     texY = std::max(0, std::min(texY, static_cast<int>(texture.height) - 1));
 
-    // Get the pixel colour from the texture map
     uint32_t pixel = texture.pixels[texY * static_cast<int>(texture.width) + texX];
-
-    // Pack the pixel colour into a Colour and return it
     return Colour((pixel >> 16) & 0xFF, (pixel >> 8) & 0xFF, pixel & 0xFF);
 }
 
@@ -1309,12 +1339,7 @@ Colour RayTracedRenderer::refractedRay(const RayTriangleIntersection &intersecti
     float indexOfRefraction = n1 / n2;
 
     // If refraction is not possible (total internal reflection), return the attenuated reflected colour
-    if (!refractRay(direction, normal, indexOfRefraction, refractedDirection))
-    {
-        return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium);
-    }
-    if (glm::dot(refractedDirection, flatNormal) > 0.0f &&
-        !refractRay(direction, flatNormal, indexOfRefraction, refractedDirection))
+    if (!refractRay(direction, normal, indexOfRefraction, refractedDirection) || !refractRay(direction, flatNormal, indexOfRefraction, refractedDirection))
     {
         return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium);
     }
@@ -1438,19 +1463,71 @@ Colour RayTracedRenderer::enviornmentHelper(const glm::vec3 &direction)
     float u = longitude / (2.0f * RAY_TRACED_PI) + 0.5f;
     float v = 0.5f - latitude / RAY_TRACED_PI;
 
-    const int environmentTextureWidth = static_cast<int>(environmentMap.width);
-    const int environmentTextureHeight = static_cast<int>(environmentMap.height);
+    // Convert the u and v coordinates to pixel coordinates
+    float x = (u * environmentMap.width) - 0.5f;
+    float y = (v * environmentMap.height) - 0.5f;
 
-    int x = static_cast<int>(u * environmentTextureWidth) % environmentTextureWidth;
-    if (x < 0)
+    int x0 = static_cast<int>(std::floor(x));
+    int y0 = static_cast<int>(std::floor(y));
+    float differenceX = x - x0;
+    float differenceY = y - y0;
+
+    int width = environmentMap.width;
+    int height = environmentMap.height;
+
+    int x0_wrapped = x0;
+    if (x0_wrapped < 0)
     {
-        x += environmentTextureWidth;
+        x0_wrapped += width;
+    }
+    else if (x0_wrapped >= width)
+    {
+        x0_wrapped -= width;
     }
 
-    const int y = glm::clamp(static_cast<int>(v * environmentTextureHeight), 0, environmentTextureHeight - 1);
+    int x1_wrapped = x0 + 1;
+    if (x1_wrapped < 0)
+    {
+        x1_wrapped += width;
+    }
+    else if (x1_wrapped >= width)
+    {
+        x1_wrapped -= width;
+    }
 
-    const uint32_t packed = environmentMap.pixels[y * environmentTextureWidth + x];
-    return Colour((packed >> 16) & 0xFF, (packed >> 8) & 0xFF, packed & 0xFF);
+    int y0_clamped = glm::clamp(y0, 0, height - 1);
+    int y1_clamped = glm::clamp(y0 + 1, 0, height - 1);
+
+    Colour colourTopLeft = sampleTexture(environmentMap, x0_wrapped, y0_clamped);
+    Colour colourTopRight = sampleTexture(environmentMap, x1_wrapped, y0_clamped);
+    Colour colourBottomLeft = sampleTexture(environmentMap, x0_wrapped, y1_clamped);
+    Colour colourBottomRight = sampleTexture(environmentMap, x1_wrapped, y1_clamped);
+
+    glm::vec3 topLeftVector(
+        colourTopLeft.red / 255.0f,
+        colourTopLeft.green / 255.0f,
+        colourTopLeft.blue / 255.0f);
+    glm::vec3 topRightVector(
+        colourTopRight.red / 255.0f,
+        colourTopRight.green / 255.0f,
+        colourTopRight.blue / 255.0f);
+    glm::vec3 bottomLeftVector(
+        colourBottomLeft.red / 255.0f,
+        colourBottomLeft.green / 255.0f,
+        colourBottomLeft.blue / 255.0f);
+    glm::vec3 bottomRightVector(
+        colourBottomRight.red / 255.0f,
+        colourBottomRight.green / 255.0f,
+        colourBottomRight.blue / 255.0f);
+
+    glm::vec3 top = glm::mix(topLeftVector, topRightVector, differenceX);
+    glm::vec3 bottom = glm::mix(bottomLeftVector, bottomRightVector, differenceX);
+    glm::vec3 finalColour = glm::mix(top, bottom, differenceY);
+
+    return Colour(
+        static_cast<int>(glm::clamp(finalColour.r * 255.0f, 0.0f, 255.0f)),
+        static_cast<int>(glm::clamp(finalColour.g * 255.0f, 0.0f, 255.0f)),
+        static_cast<int>(glm::clamp(finalColour.b * 255.0f, 0.0f, 255.0f)));
 }
 
 // Generate a random point on the light source for photon tracing
@@ -1681,12 +1758,18 @@ void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::
         globalPhotonMap.addPhoton({intersection.intersectionPoint, direction, power});
     }
 
-    // Calculate the surface colour and survival probability based on the triangle's colour
-    glm::vec3 surfaceColour = glm::vec3(triangle.colour.red, triangle.colour.green, triangle.colour.blue) / 255.0f;
-    float survival = (surfaceColour.r + surfaceColour.g + surfaceColour.b) / 3.0f;
+    // Calculate the surface colour from the texture when one is assigned, otherwise use the triangle colour
+    Colour colour = triangle.colour;
+    if (triangle.textureIndex >= 0)
+    {
+        colour = texturedShading(intersection);
+    }
+
+    glm::vec3 surfaceColour = glm::vec3(colour.red, colour.green, colour.blue) / 255.0f;
+    float survival = std::max(surfaceColour.r, std::max(surfaceColour.g, surfaceColour.b));
 
     // If the random float is greater than or equal to the survival probability, return to terminate the photon tracing
-    if (randomFloat() >= survival)
+    if (survival <= 0.0f || randomFloat() >= survival)
     {
         return;
     }

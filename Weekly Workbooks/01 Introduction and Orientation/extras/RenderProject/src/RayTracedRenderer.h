@@ -26,6 +26,7 @@ private:
     glm::vec2 randomPointInReflexLens(float outerRadius, float innerRatio);
     Colour shadingHelper(RayTriangleIntersection intersection);
     Colour enviornmentHelper(const glm::vec3 &direction);
+    Colour sampleTexture(const TextureMap &texture, float u, float v);
 
     // Ray tracing functions
     Colour traceRay(const glm::vec3 &origin, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption = glm::vec3(0.0f), bool insideMedium = false);
