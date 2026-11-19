@@ -56,12 +56,21 @@ bool worldRefractiveEnabled = false;
 // Flag to enable/disable world metallic materials
 bool worldMetallicEnabled = false;
 
+// Flag to enable/disable environment maps
 bool environmentMapEnabled = false;
+
+// Flag to enable/disable environment map visibility to camera
 bool environmentMapSeenByCamera = false;
 
+// Flag to enable/disable photon mapping and debugging
 bool photonMappingEnabled = false;
+
+// Flag to enable/disable photon debugging
 bool photonDebuggingEnabled = false;
 
+constexpr float MAIN_PI = 3.14159265358979323846f;
+
+// Time variable for water animation
 float waterTime = 0.0f;
 
 // Flag to enable/disable soft shadows
@@ -75,9 +84,6 @@ glm::vec3 lightMax(0.0f);
 TextureMap environmentMap;
 std::vector<TextureMap> textures;
 std::unordered_map<std::string, int> textureIndexByMaterial;
-
-int environmentTextureWidth = 0;
-int environmentTextureHeight = 0;
 
 DrawingWindow window = DrawingWindow(WIDTH, HEIGHT);
 
@@ -110,20 +116,20 @@ std::string objFilename = "/Assets/textured-cornell-box";
 std::string objFilenameSphere = "/Assets/sphere";
 
 // Core 3D rendering data structures (for when we eventually get around to working in 3D ;o)
+// (I have now got round to working in 3D ;o)
 float focalLength = 2.0;
 float focalDistance = 4.0f;
 float lenseSize = 0.13f;
 int raysPerPixel = 1;
 
+// Camera and light positions
 glm::vec3 cameraPosition(0.0, 0.0, 6.0);
 glm::mat3 cameraOrientation = glm::mat3(1.0f);
 glm::vec3 lightPosition(0.0, 0.8, 0.0);
 
+// Animation flags
 bool isAnimating = false;
 int animationTick = 0;
-
-// PI so i dont have to call a library
-const double PI = 3.14159265358979323846;
 
 // Triangle storage
 std::vector<ModelTriangle> triangles;
@@ -137,22 +143,27 @@ std::unordered_map<std::string, Colour> paletteMap;
 // Store the properties of each material type in a struct for easy access
 struct MaterialProperties
 {
-	bool isMirror;
-	bool isWater;
-	bool isRefractive;
-	bool isMetallic;
-	float roughness;
-	float refractiveIndex;
-	float stretchFactor;
-	glm::vec3 fresnelReflectance;
-	glm::vec3 absorption;
+	bool isMirror;				  // Check for mirror
+	bool isWater;				  // Check for water
+	bool isRefractive;			  // Check for refractive
+	bool isMetallic;			  // Check for metallic
+	float roughness;			  // Roughness for metallic materials
+	float refractiveIndex;		  // Refractive index for refractive materials
+	float stretchFactor;		  // Stretch factor for stretched metals
+	glm::vec3 fresnelReflectance; // Fresnel reflectance for metallic materials
+	glm::vec3 absorption;		  // Absorption for refractive materials
 };
 
 // Define a map to associate material names with their properties
 const std::unordered_map<std::string, MaterialProperties> materialProperties = {
+	// Reflective
 	{"Mirror", {true, false, false, false, 0.0f, 1.0f, 1.0f, glm::vec3(0.0f), glm::vec3(0.0f)}},
+
+	// Refractive
 	{"Glass", {false, false, true, false, 0.0f, 1.5f, 1.0f, glm::vec3(0.0f), glm::vec3(0.35f, 0.10f, 0.25f)}},
 	{"Water", {false, true, true, false, 0.0f, 1.333f, 1.0f, glm::vec3(0.0f), glm::vec3(0.90f, 0.25f, 0.15f)}},
+
+	// Metals
 	{"Gold", {false, false, false, true, 0.15f, 1.0f, 1.0f, glm::vec3(1.00f, 0.71f, 0.29f), glm::vec3(0.0f)}},
 	{"Silver", {false, false, false, true, 0.05f, 1.0f, 1.0f, glm::vec3(0.95f, 0.93f, 0.88f), glm::vec3(0.0f)}},
 	{"Copper", {false, false, false, true, 0.33f, 1.0f, 1.0f, glm::vec3(0.95f, 0.64f, 0.54f), glm::vec3(0.0f)}},
@@ -191,7 +202,7 @@ void lookAt(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, const glm::
 // Rotation functions
 void rotateX(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, float degrees)
 {
-	double degreeInRadians = double(degrees) * (PI / 180.0);
+	double degreeInRadians = double(degrees) * (MAIN_PI / 180.0);
 	double cos_value = std::cos(degreeInRadians);
 	double sin_value = std::sin(degreeInRadians);
 
@@ -209,7 +220,7 @@ void rotateX(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, float degr
 // Same as above but for Y
 void rotateY(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, float degrees)
 {
-	float degreeInRadians = degrees * (PI / 180.0);
+	float degreeInRadians = degrees * (MAIN_PI / 180.0);
 	float cos_value = std::cos(degreeInRadians);
 	float sin_value = std::sin(degreeInRadians);
 
@@ -225,7 +236,7 @@ void rotateY(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, float degr
 
 void panCamera(glm::mat3 &cameraOrientation, float degrees)
 {
-	float radians = degrees * (PI / 180.0);
+	float radians = degrees * (MAIN_PI / 180.0);
 	float cosine = std::cos(radians);
 	float sine = std::sin(radians);
 	glm::mat3 rotationMatrix = glm::mat3(
@@ -242,7 +253,7 @@ void tiltCamera(glm::mat3 &cameraOrientation, int degrees)
 	if ((degrees > 0 && forwardY > 0.95f) || (degrees < 0 && forwardY < -0.95f))
 		return;
 
-	float radians = degrees * (PI / 180.0);
+	float radians = degrees * (MAIN_PI / 180.0);
 	float cosine = std::cos(radians);
 	float sine = std::sin(radians);
 	glm::mat3 rotationMatrix = glm::mat3(
@@ -853,18 +864,25 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 		else if (prefix == "f" && tokens.size() >= 4)
 		{
 			// Parse the vertex indices and texture indices
-			int idx[3];
-			int texIdx[3];
+			int index[3];
+			int textureIndex[3];
 			for (int i = 0; i < 3; i++)
 			{
 				// Split the face token by '/' to separate vertex and texture indices
 				std::vector<std::string> parts = split(tokens[i + 1], '/');
 				// Convert the vertex index to an integer and adjust for 0-based indexing
-				idx[i] = std::stoi(parts[0]) - 1;
+				index[i] = std::stoi(parts[0]) - 1;
 				// Convert the texture index to an integer and adjust for 0-based indexing, if it exists; otherwise, set to -1
-				texIdx[i] = (parts.size() > 1 && !parts[1].empty()) ? std::stoi(parts[1]) - 1 : -1;
+				if (parts.size() > 1 && !parts[1].empty())
+				{
+					textureIndex[i] = std::stoi(parts[1]) - 1;
+				}
+				else
+				{
+					textureIndex[i] = -1;
+				}
 			}
-			ModelTriangle triangle(vertices[idx[0]], vertices[idx[1]], vertices[idx[2]], colour);
+			ModelTriangle triangle(vertices[index[0]], vertices[index[1]], vertices[index[2]], colour);
 
 			// Set the material properties for the triangle based on the current material
 			triangle.isMirror = currentMaterialProperties.isMirror;
@@ -888,7 +906,7 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 				for (int i = 0; i < 3; i++)
 				{
 					// if the texture index is invalid, set valid to false
-					if (texIdx[i] < 0 || texIdx[i] >= static_cast<int>(textureVertices.size()))
+					if (textureIndex[i] < 0 || textureIndex[i] >= static_cast<int>(textureVertices.size()))
 						valid = false;
 				}
 				if (valid)
@@ -898,8 +916,8 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 					for (int i = 0; i < 3; i++)
 					{
 						// Get the texture coordinates (u, v) for the vertex
-						float u = textureVertices[texIdx[i]].x;
-						float v = textureVertices[texIdx[i]].y;
+						float u = textureVertices[textureIndex[i]].x;
+						float v = textureVertices[textureIndex[i]].y;
 						// Convert (u, v) to pixel coordinates in the texture map and assign to the triangle's texturePoints
 						triangle.texturePoints[i] = TexturePoint(u * texture.width, v * texture.height);
 					}
@@ -920,19 +938,31 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 			// Look up the material properties for the current material name
 			auto material = materialProperties.find(tokens[1]);
 			// If the material name exists in the map, set currentMaterialProperties to the corresponding properties; otherwise, set it to default values
-			currentMaterialProperties = material != materialProperties.end()
-											? material->second
-											: MaterialProperties{
-												  false, false, false, false, 0.0f, 1.0f, 1.0f, glm::vec3(0.0f), glm::vec3(0.0f)};
+			if (material != materialProperties.end())
+			{
+				currentMaterialProperties = material->second;
+			}
+			else
+			{
+				currentMaterialProperties = MaterialProperties{
+					false, false, false, false, 0.0f, 1.0f, 1.0f, glm::vec3(0.0f), glm::vec3(0.0f)};
+			}
 
 			// Check if the material name exists in the textureIndexByMaterial map
-			auto tex = textureIndexByMaterial.find(tokens[1]);
-			// If it exists, set currentTextureIndex to the corresponding index; otherwise, set it to -1
-			currentTextureIndex = (tex != textureIndexByMaterial.end()) ? tex->second : -1;
+			auto texture = textureIndexByMaterial.find(tokens[1]);
+			// If it exists, set currentTextureIndex to the corresponding index
+			if (texture != textureIndexByMaterial.end())
+			{
+				currentTextureIndex = texture->second;
+			}
+			else
+			{
+				currentTextureIndex = -1;
+			}
 
 			// Check if the material name exists in the paletteMap
 			auto it = paletteMap.find(tokens[1]);
-			// If it exists, set the colour to the corresponding Colour; otherwise, keep the previous colour
+			// If it exists, set the colour to the corresponding Colour
 			if (it != paletteMap.end())
 			{
 				colour = it->second;
@@ -949,9 +979,11 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 
 std::array<glm::vec3, 3> vertexNormals(const ModelTriangle &triangle)
 {
-	float smoothThreshold = triangle.objectName == "sphere"
-								? -1.0f
-								: std::cos(glm::radians(45.0f));
+	float smoothThreshold = std::cos(glm::radians(45.0f));
+	if (triangle.objectName == "sphere")
+	{
+		smoothThreshold = -1.0f;
+	}
 	std::array<glm::vec3, 3> normals;
 
 	for (int i = 0; i < 3; ++i)
@@ -1043,6 +1075,13 @@ std::vector<Colour> colourParseOBJ(const std::string &filename)
 				static_cast<int>(std::round(255 * std::stof(tokens[2]))),
 				static_cast<int>(std::round(255 * std::stof(tokens[3])))));
 		}
+
+		// Reading texture maps for materials
+		else if (prefix == "map_Kd" && tokens.size() >= 2)
+		{
+			std::string texturePath = "../../../05 Navigation and Transformation/models/" + tokens[1];
+			loadTexture(colourName, texturePath);
+		}
 	}
 	// Return vectors
 	return colours;
@@ -1052,7 +1091,6 @@ int main(int argc, char *argv[])
 {
 
 	// Load in textures
-	loadTexture("Cobbles", "../../../05 Navigation and Transformation/models/texture (1).ppm");
 	loadTexture("Environment", "../../../05 Navigation and Transformation/models/environment2.ppm");
 
 	// Get the environment map and its dimensions
@@ -1061,7 +1099,7 @@ int main(int argc, char *argv[])
 	std::vector<std::string> filennames = {
 		"../../../05 Navigation and Transformation/models/textured-cornell-box",
 		"../../../07 Lighting and Shading/resources/sphere",
-		//"../../../05 Navigation and Transformation/models/Bunny-LowPoly",
+		"../../../05 Navigation and Transformation/models/Bunny-LowPoly",
 	};
 	std::string cornellBoxFilename = filennames[0]; // Use the first filename
 	// Get the colour pallete
@@ -1075,14 +1113,17 @@ int main(int argc, char *argv[])
 	// Parse the triangles
 	for (size_t i = 0; i < filennames.size(); ++i)
 	{
+		// Set the scaling factor, translation, and rotation based on the index of the filename
 		float scalingFactor = 0.35f;
 		glm::vec3 translation(0.0f);
 		glm::mat3 rotation(1.0f);
 
+		// For the sphere
 		if (i == 1)
 		{
 			translation = glm::vec3(0.58f, 0.055f, -0.96f);
 		}
+		// For the bunny
 		else if (i == 2)
 		{
 			scalingFactor = 0.005f;

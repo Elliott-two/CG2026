@@ -93,7 +93,7 @@ extern bool isBlueBoxShowing;
 extern bool isRedBoxShowing;
 
 // All of my preset needed things
-constexpr float PI = 3.14159265358979323846f;          // PI
+constexpr float RAY_TRACED_PI = 3.14159265358979323846f;
 constexpr float IMAGE_SCALE = 500.0f;                  // Scale for the image plane
 constexpr float LIGHT_INTENSITY = 20.0f;               // Intensity of the light source
 constexpr float AMBIENT = 0.25f;                       // Ambient light intensity
@@ -109,7 +109,7 @@ constexpr float CAUSTIC_RADIUS = 0.04f;                // Radius for caustic pho
 constexpr float GLOBAL_RADIUS = 0.16f;                 // Radius for global photon gathering
 constexpr float INDIRECT_STRENGTH = 0.40f;             // Strength of indirect lighting from photon mapping
 constexpr uint32_t CAUSTIC_PHOTON_COLOUR = 0xFFFF00FF; // Colour for caustic photons in debugging mode (magenta)
-constexpr uint32_t GLOBAL_PHOTON_COLOUR = 0xFF00FFFF;  // Colour for global photons in debugging mode (cyan)
+constexpr uint32_t GLOBAL_PHOTON_COLOUR = 0xFFFDF4DC;  // Colour for global photons in debugging mode (warm white)
 constexpr float SURFACE_OFFSET = 0.001f;               // Offset to avoid self-intersection when tracing rays from surfaces
 
 // Thread-local storage for the view origin, which is used in depth of field calculations
@@ -271,7 +271,7 @@ static float specularPower(float specularPowerValue) //
 // Use MATHS?!?
 static float lightFalloff(float distanceSquared)
 {
-    return LIGHT_INTENSITY / (4.0f * PI * distanceSquared);
+    return LIGHT_INTENSITY / (4.0f * RAY_TRACED_PI * distanceSquared);
 }
 
 // Calculating the light sample for a given point
@@ -802,8 +802,8 @@ Colour RayTracedRenderer::texturedShading(RayTriangleIntersection intersection)
 // Given by Intellisense the moment i started typing
 glm::vec2 RayTracedRenderer::randomPointInCircle(float radius)
 {
-    float random = radius * std::sqrt(randomFloat()); // Square root for uniform distribution in circle
-    float theta = 2.0f * PI * randomFloat();          // Random angle
+    float random = radius * std::sqrt(randomFloat());   // Square root for uniform distribution in circle
+    float theta = 2.0f * RAY_TRACED_PI * randomFloat(); // Random angle
 
     return glm::vec2(random * std::cos(theta), random * std::sin(theta));
 }
@@ -1412,16 +1412,19 @@ Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &dir
     return throughMedium(shadingHelper(intersection));
 }
 
+// Sample the environment map based on the given direction, returning the corresponding colour
 Colour RayTracedRenderer::enviornmentHelper(const glm::vec3 &direction)
 {
+    // Normalize the direction vector to ensure it has a length of 1
     glm::vec3 normalizedDirection = glm::normalize(direction);
 
+    // Calculate the longitude and latitude based on the normalized direction vector using spherical coordinates
     float longitude = std::atan2(-normalizedDirection.z, normalizedDirection.x);
 
     float latitude = std::asin(glm::clamp(normalizedDirection.y, -1.0f, 1.0f));
 
-    float u = longitude / (2.0f * PI) + 0.5f;
-    float v = 0.5f - latitude / PI;
+    float u = longitude / (2.0f * RAY_TRACED_PI) + 0.5f;
+    float v = 0.5f - latitude / RAY_TRACED_PI;
 
     const int environmentTextureWidth = static_cast<int>(environmentMap.width);
     const int environmentTextureHeight = static_cast<int>(environmentMap.height);
@@ -1438,31 +1441,47 @@ Colour RayTracedRenderer::enviornmentHelper(const glm::vec3 &direction)
     return Colour((packed >> 16) & 0xFF, (packed >> 8) & 0xFF, packed & 0xFF);
 }
 
+// Generate a random point on the light source for photon tracing
 static glm::vec3 randomPointOnLight()
 {
+    // Generate random values for the x and z
     float randomX = randomFloat();
     float randomZ = randomFloat();
-    float y = lightMin.y - SURFACE_OFFSET; // Slightly below the light source to avoid self-intersection
 
+    // Calculate the y-coordinate slightly below the light source to avoid self-intersection
+    float y = lightMin.y - SURFACE_OFFSET;
+
+    // Calculate the x and z coordinates based on the random values and the light source bounds
     float x = lightMin.x + randomX * (lightMax.x - lightMin.x);
     float z = lightMin.z + randomZ * (lightMax.z - lightMin.z);
+
+    // Return the random point on the light source as a glm::vec3
     return glm::vec3(x, y, z);
 }
 
+// Generate a random downward direction for photon tracing
 static glm::vec3 randomDownwardDirection()
 {
+    // Generate a random point oriented downwards
     float y = -randomFloat();
+    // Calculate the radius of the circle at the given y-coordinate using the Pythagorean theorem
     float r = std::sqrt(1.0f - y * y);
-    float theta = 2.0f * PI * randomFloat();
+    // Generate a random angle
+    float theta = 2.0f * RAY_TRACED_PI * randomFloat();
+    // Calculate the x and z coordinates based on the radius and angle using polar coordinates
     float randomX = r * std::cos(theta);
     float randomZ = r * std::sin(theta);
+    // Ensure the y-coordinate is negative to point downwards
     if (y > 0.0f)
     {
         y = -y;
     }
+    // Return the normalized direction vector
     return glm::normalize(glm::vec3(randomX, y, randomZ));
 }
 
+// Generate a random direction in the hemisphere defined by the given normal vector
+// Given by intellisense
 static glm::vec3 randomHemisphereDirection(const glm::vec3 &normal)
 {
     glm::vec3 direction;
@@ -1550,6 +1569,7 @@ void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::
 
         glm::vec3 normal = side * surfaceNormal;
 
+        // Calculate the cosine of the angle between the incoming photon and the surface normal
         float cosTheta = glm::clamp(glm::dot(-direction, normal), 0.0f, 1.0f);
         float RandomChance;
 
@@ -1590,54 +1610,78 @@ void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::
         return;
     }
 
+    // Path for mirror
     if (triangle.isMirror && worldMirroringEnabled)
     {
         cameFromSpecular = true;
+        // Calculate the reflected direction using the reflection formula and normalize it
         direction = glm::normalize(direction - 2.0f * glm::dot(direction, triangle.normal) * triangle.normal);
+        // Trace the reflected photon recursively, offsetting the starting point slightly to avoid self-intersection
         tracePhoton(intersection.intersectionPoint + direction * SURFACE_OFFSET, direction, power, insideMedium, cameFromSpecular, depth + 1, diffuseDepth);
         return;
     }
 
+    // Path for metallic surfaces
     if (triangle.isMetallic && worldMetallicEnabled)
     {
         cameFromSpecular = true;
 
-        glm::vec3 fresnelTint = fresnelSchlickMetallic(glm::clamp(glm::dot(-direction, triangle.normal), 0.0f, 1.0f), triangle.fresnelReflectance);
+        // Calculate the Fresnel tint using the Fresnel-Schlick approximation for metallic surfaces
+        float cosTheta = glm::clamp(glm::dot(-direction, triangle.normal), 0.0f, 1.0f);
+        glm::vec3 fresnelTint = fresnelSchlickMetallic(cosTheta, triangle.fresnelReflectance);
+
+        // Attenuate the power of the photon based on the Fresnel tint
         power *= fresnelTint;
+
+        // Determine the side of the surface normal based on the direction of the photon and the triangle's normal
         float side = 1.0f;
         if (glm::dot(direction, triangle.normal) > 0.0f)
         {
             side = -1.0f;
         }
         glm::vec3 normal = side * triangle.normal;
-        direction = glm::normalize(direction - 2.0f * glm::dot(direction, normal) * normal);
+
+        // Calculate the reflected direction using the reflection formula and normalize it
+        glm::vec3 reflectedDirection = direction - 2.0f * glm::dot(direction, normal) * normal;
+        direction = glm::normalize(reflectedDirection);
+        // Trace the reflected photon recursively, offsetting the starting point slightly to avoid self-intersection
         tracePhoton(intersection.intersectionPoint + direction * SURFACE_OFFSET, direction, power, insideMedium, cameFromSpecular, depth + 1, diffuseDepth);
         return;
     }
 
+    // Path for diffuse surfaces
+
+    // Calculate the surface normal and ensure it is facing the correct direction based on the incoming photon direction
     glm::vec3 surfaceNormal = triangle.normal;
     if (glm::dot(direction, surfaceNormal) > 0.0f)
     {
         surfaceNormal = -surfaceNormal;
     }
 
+    // If the photon is coming from a specular surface and the diffuse depth is zero, add the photon to the caustic photon map
     if (diffuseDepth == 0 && cameFromSpecular)
     {
         causticPhotonMap.addPhoton({intersection.intersectionPoint, direction, power});
     }
+    // If the diffuse depth is greater than zero, add the photon to the global photon map
     else if (diffuseDepth > 0)
     {
         globalPhotonMap.addPhoton({intersection.intersectionPoint, direction, power});
     }
 
+    // Calculate the surface colour and survival probability based on the triangle's colour
     glm::vec3 surfaceColour = glm::vec3(triangle.colour.red, triangle.colour.green, triangle.colour.blue) / 255.0f;
     float survival = (surfaceColour.r + surfaceColour.g + surfaceColour.b) / 3.0f;
+
+    // If the random float is greater than or equal to the survival probability, return to terminate the photon tracing
     if (randomFloat() >= survival)
     {
         return;
     }
+    // Attenuate the power of the photon based on the surface colour and survival probability
     power = power * surfaceColour / survival;
 
+    // Generate a new random direction in the hemisphere defined by the surface normal for diffuse reflection
     glm::vec3 newDirection = randomHemisphereDirection(surfaceNormal);
 
     power *= 2.0f * glm::dot(newDirection, surfaceNormal);

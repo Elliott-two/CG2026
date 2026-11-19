@@ -13,9 +13,7 @@ constexpr float IMAGE_SCALE = 500.0f;
 // Speed of orbit
 constexpr float ORBIT_Y_DEGREES_PER_FRAME = 0.5f;
 constexpr float ORBIT_X_DEGREES_PER_FRAME = 0.5f;
-
-// PI
-constexpr float PI = 3.14159265358979323846f;
+constexpr float POINT_CLOUD_PI = 3.14159265358979323846f;
 
 // Get all the texture maps
 extern std::vector<TextureMap> textures;
@@ -23,7 +21,7 @@ extern std::vector<TextureMap> textures;
 // Rotate Y for orbit
 glm::mat3 PointCloudRenderer::rotationY(float degrees)
 {
-    double degreeInRadians = degrees * (PI / 180.0);
+    double degreeInRadians = degrees * (POINT_CLOUD_PI / 180.0);
     double cos_value = std::cos(degreeInRadians);
     double sin_value = std::sin(degreeInRadians);
 
@@ -37,7 +35,7 @@ glm::mat3 PointCloudRenderer::rotationY(float degrees)
 // Rotate X for orbit
 glm::mat3 PointCloudRenderer::rotationX(float degrees)
 {
-    double degreeInRadians = degrees * (PI / 180.0);
+    double degreeInRadians = degrees * (POINT_CLOUD_PI / 180.0);
     double cos_value = std::cos(degreeInRadians);
     double sin_value = std::sin(degreeInRadians);
 

@@ -3,6 +3,8 @@
 #include <vector>
 #include <algorithm>
 
+constexpr float PHOTON_PI = 3.14159265358979323846f;
+
 struct Photon
 {
     glm::vec3 position;
