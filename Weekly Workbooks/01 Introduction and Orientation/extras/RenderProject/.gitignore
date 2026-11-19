@@ -1,0 +1,8 @@
+# Build output (recreated by make / cmake)
+build/
+
+# Saved animation frames (keep the folder itself via saved-frames/.keep)
+saved-frames/*.ppm
+
+# macOS
+.DS_Store

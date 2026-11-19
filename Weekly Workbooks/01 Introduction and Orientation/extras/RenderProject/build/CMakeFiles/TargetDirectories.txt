@@ -1,3 +1,0 @@
-/Users/elliotttwohigg/Documents/GitHub/CG2026/Weekly Workbooks/01 Introduction and Orientation/extras/RenderProject/build/CMakeFiles/RenderProject.dir
-/Users/elliotttwohigg/Documents/GitHub/CG2026/Weekly Workbooks/01 Introduction and Orientation/extras/RenderProject/build/CMakeFiles/edit_cache.dir
-/Users/elliotttwohigg/Documents/GitHub/CG2026/Weekly Workbooks/01 Introduction and Orientation/extras/RenderProject/build/CMakeFiles/rebuild_cache.dir
