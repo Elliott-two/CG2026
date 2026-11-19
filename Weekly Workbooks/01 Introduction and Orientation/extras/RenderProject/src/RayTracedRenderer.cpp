@@ -549,7 +549,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
                 glm::vec3 relative = glm::inverse(cameraOrientation) * (photon.position - cameraPosition);
                 if (relative.z >= 0.0f)
                 {
-                    continue; // Photon is behind the camera
+                    continue;
                 }
                 float u = (-focalLength * (relative.x / relative.z) * IMAGE_SCALE) + (WIDTH / 2.0f);
                 float v = (focalLength * (relative.y / relative.z) * IMAGE_SCALE) + (HEIGHT / 2.0f);

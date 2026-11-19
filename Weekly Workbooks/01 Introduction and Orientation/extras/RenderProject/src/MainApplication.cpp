@@ -11,20 +11,26 @@
 #include <random>
 #include <set>
 
-// Define globals for WIDTH and HEIGHT of the window (can be accessed from any renderer)
+// Define globals for WIDTH and HEIGHT of the window
 extern const int WIDTH = 640;
 extern const int HEIGHT = 480;
 
 // Bool to check whether we want stroked triangle view
 extern bool WireframeBool;
 
-// Orbiting int and LookAt bool
+// Orbiting float
+// Decides the speed of orbiting
 float isOrbiting = 0; // 0 = not orbiting, 1 = clockwise, -1 = counterclockwise
+
+// LookAt bool, activating forces the camera to look at the world center
 bool isLookAtEnabled = false;
 
-// Bool to check if we need to redraw
+// Bool to force redraw rayTracing
+// Used for when things change in the scene
 bool forceRayTraceRedraw = false;
 
+// Bool to force a redraw of Photon maps
+// Needed for when things to do with lighting may change
 bool forcePhotonMapRedraw = false;
 
 // Bool for different shading techniques
@@ -32,46 +38,55 @@ bool GouraudShadingEnabled = false;
 bool PhongShadingEnabled = false;
 
 // Bool to check if the sphere, boxes, and bunny are showing
+// All on at the start of the scene
 bool isSphereShowing = true;
 bool isBlueBoxShowing = true;
 bool isRedBoxShowing = true;
 bool isBunnyShowing = true;
 
-// Flag to enable/disable depth of field effect
+// Flags to toggle:
+
+// Depth of field effect
 bool depthOfFieldEnabled = false;
-// Flag to enable/disable swirl effect
+
+// Swirl effect - option for depth of field
 bool swirlEnabled = false;
-// Flag to enable/disable reflex lens effect
+
+// Reflex lens effect - option for depth of field
 bool reflexLensEnabled = false;
 
-// Flag to enable/disable world mirroring
+// World mirroring - Turns mirrors back to their unreflective state when false
 bool worldMirroringEnabled = false;
 
-// Flag to enable/disable world refractive materials
+// World refractive materials - Sets them back to the unrefractive version when false
 bool worldRefractiveEnabled = false;
 
-// Flag to enable/disable world metallic materials
+// World metallic materials - Makes them simple flat colours when false
 bool worldMetallicEnabled = false;
 
-// Flag to enable/disable environment maps
+// Environment maps
 bool environmentMapEnabled = false;
 
-// Flag to enable/disable environment map visibility to camera
+// Environment map visibility to camera - when false, the camera can only see the map through a reflection
 bool environmentMapSeenByCamera = false;
 
-// Flag to enable/disable photon mapping and debugging
+// Photon mapping -
+// When Refractive materials are on - Globals and Caustics can be seen
+// When Refractive materials are off - Only Globals can be seen
 bool photonMappingEnabled = false;
 
-// Flag to enable/disable photon debugging
+// Photon debugging - When true, the camera can only see the photons
 bool photonDebuggingEnabled = false;
 
+// Soft shadows
+bool softShadowsEnabled = false;
+
+// PI used within the main file
+// Ran into some problems with it declared over one file
 constexpr float MAIN_PI = 3.14159265358979323846f;
 
-// Time variable for water animation
+// Time variable for water animation speed
 float waterTime = 0.0f;
-
-// Flag to enable/disable soft shadows
-bool softShadowsEnabled = false;
 
 // Light position and min/max values for light calculations
 glm::vec3 lightMin(0.0f);
@@ -84,8 +99,6 @@ std::unordered_map<std::string, int> textureIndexByMaterial;
 
 DrawingWindow window = DrawingWindow(WIDTH, HEIGHT);
 
-// Create instances of each renderer
-
 // Cornell Box and Sphere Renderers
 RasterisedRenderer rasterisedRenderer = RasterisedRenderer();
 PointCloudRenderer pointCloudRenderer = PointCloudRenderer();
@@ -94,6 +107,7 @@ RayTracedRenderer rayTracedRenderer = RayTracedRenderer();
 // The default starting point
 Renderer *currentRenderer = &pointCloudRenderer;
 
+// Frame based variables
 bool savingFrames = false;
 int frameCounter = 0;
 bool newFrameRendered = false;
@@ -157,24 +171,38 @@ std::unordered_map<std::string, MaterialProperties> materialProperties = {
 	{"Aluminium", {false, false, false, true, 0.53f, 1.0f, 3.0f, glm::vec3(0.91f, 0.92f, 0.92f), glm::vec3(0.0f)}},
 	{"Iron", {false, false, false, true, 0.8f, 1.0f, 1.0f, glm::vec3(0.56f, 0.57f, 0.58f), glm::vec3(0.04f)}}};
 
+// When given an object and a material, apply the respective properties to the object
 void applyMaterialToObject(const std::string &objectName, const std::string &materialName)
 {
+	// Default properties - Basic material
 	MaterialProperties properties = {
 		false, false, false, false, 0.0f, 1.0f, 1.0f, glm::vec3(1.0f), glm::vec3(0.0f)};
+
+	// Find material in Map
 	auto material = materialProperties.find(materialName);
 	if (material != materialProperties.end())
+	{
 		properties = material->second;
+	}
 
+	// Find colour in Map
 	Colour colour = Colour(255, 255, 255);
 	auto paletteColour = paletteMap.find(materialName);
 	if (paletteColour != paletteMap.end())
+	{
 		colour = paletteColour->second;
+	}
 
+	// For every triangle in triangles
 	for (ModelTriangle &triangle : triangles)
 	{
+		// Skip the objects that dont share the name
 		if (triangle.objectName != objectName)
+		{
 			continue;
+		}
 
+		// Assign all of the properties
 		triangle.colour = colour;
 		triangle.textureIndex = -1;
 		triangle.isMirror = properties.isMirror;
@@ -188,20 +216,28 @@ void applyMaterialToObject(const std::string &objectName, const std::string &mat
 		triangle.refractiveIndex = properties.isRefractive ? properties.refractiveIndex : 1.0f;
 	}
 
+	// We must force both redraws
+	// Force RayTrace as the colour can be seen from the camera
+	// Force PhotonMap as survivability is based on colour and material type
 	forceRayTraceRedraw = true;
 	forcePhotonMapRedraw = true;
 }
 
+// Function to change the objects roughness
 void setRoughnessForObject(const std::string &objectName, float roughness)
 {
+	// Loop over every triangle to check for the objects name
 	for (ModelTriangle &triangle : triangles)
 	{
+		// Cannot change the roughness of a non metallic object
 		if (triangle.objectName == objectName && triangle.isMetallic)
+		{
 			triangle.roughness = roughness;
+		}
 	}
 
+	// Must force redraw of the scene as the colours can be seen
 	forceRayTraceRedraw = true;
-	forcePhotonMapRedraw = true;
 }
 
 void setAbsorptionForObject(const std::string &objectName, const glm::vec3 &absorption)
@@ -214,17 +250,22 @@ void setAbsorptionForObject(const std::string &objectName, const glm::vec3 &abso
 		}
 	}
 
+	// Force both redraw as light changes based on absorption
 	forceRayTraceRedraw = true;
 	forcePhotonMapRedraw = true;
 }
 
+// For every colour, create a material to help change them easier
 void registerPaletteColoursAsMaterials()
 {
+	// Default to stop erros
 	const MaterialProperties defaultProperties = {
 		false, false, false, false, 0.0f, 1.0f, 1.0f, glm::vec3(1.0f), glm::vec3(0.0f)};
 
+	// Loop over every colour in the pallette
 	for (const Colour &colour : palette)
 	{
+		// Add into the map
 		materialProperties.emplace(colour.name, defaultProperties);
 		paletteMap[colour.name] = colour;
 	}
@@ -236,18 +277,30 @@ void loadTexture(const std::string &materialName, const std::string &path)
 	textureIndexByMaterial[materialName] = static_cast<int>(textures.size()) - 1;
 }
 
+// LookAt forces the camera to look at the world center
 void lookAt(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, const glm::vec3 &target)
 {
-	if (glm::length(cameraPosition - target) < 1e-5f)
+	glm::vec3 forwardVector = cameraPosition - target;
+	// If the distance between the camera position and the target is very very small, we can simply return
+	if (glm::length(forwardVector) < 1e-5f)
+	{
 		return;
+	}
 
 	// Calculate the forward vector
-	glm::vec3 forward = glm::normalize(cameraPosition - target);
+	// The vector between the camera
+	glm::vec3 forward = glm::normalize(forwardVector);
 
+	// The worldUp vector, positive Y means up
 	glm::vec3 worldUp(0.0f, 1.0f, 0.0f);
 
+	// Check if our forward vectors y coordinate is very close to 1
+	// if so our world up becomes positive Z
+	// This prevents division by 0
 	if (std::abs(forward.y) > 0.999f)
+	{
 		worldUp = glm::vec3(0.0f, 0.0f, 1.0f);
+	}
 
 	// Calculate the right vector by crossing the global "up"
 	glm::vec3 right = glm::normalize(glm::cross(worldUp, forward));
@@ -262,7 +315,11 @@ void lookAt(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, const glm::
 // Rotation functions
 void rotateX(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, float degrees)
 {
+	// Convert to radians for matrix manipulation
+	// Year 1 Maths is in fact useful
 	double degreeInRadians = double(degrees) * (MAIN_PI / 180.0);
+
+	// Assign variables for ease of use
 	double cos_value = std::cos(degreeInRadians);
 	double sin_value = std::sin(degreeInRadians);
 
@@ -294,24 +351,33 @@ void rotateY(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, float degr
 	cameraPosition = rotationMatrix * cameraPosition;
 }
 
+// Look the camera left or right without moving the camera
 void panCamera(glm::mat3 &cameraOrientation, float degrees)
 {
-	float radians = degrees * (MAIN_PI / 180.0);
-	float cosine = std::cos(radians);
-	float sine = std::sin(radians);
+	float degreeInRadians = degrees * (MAIN_PI / 180.0);
+	float cos_value = std::cos(degreeInRadians);
+	float sin_value = std::sin(degreeInRadians);
+
 	glm::mat3 rotationMatrix = glm::mat3(
-		glm::vec3(cosine, 0.0f, -sine),
+		glm::vec3(cos_value, 0.0f, -sin_value),
 		glm::vec3(0.0f, 1.0f, 0.0f),
-		glm::vec3(sine, 0.0f, cosine));
+		glm::vec3(sin_value, 0.0f, cos_value));
+
+	// Dont change position
 	cameraOrientation = rotationMatrix * cameraOrientation;
 }
 
+// Look up or down without actually moving the camera
 void tiltCamera(glm::mat3 &cameraOrientation, int degrees)
 {
-	// Stop the camera from tilting too far up or down
+	// Our forward vector
 	float forwardY = -cameraOrientation[2].y;
+
+	// Stop the camera from tilting too far up or down
 	if ((degrees > 0 && forwardY > 0.95f) || (degrees < 0 && forwardY < -0.95f))
+	{
 		return;
+	}
 
 	float radians = degrees * (MAIN_PI / 180.0);
 	float cosine = std::cos(radians);
@@ -348,6 +414,7 @@ void print(std::string s)
 void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = currentRenderer)
 {
 
+	// Nice little focus on where i click
 	if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
 	{
 		if (currentRenderer == &rayTracedRenderer)
@@ -358,12 +425,16 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 	}
 
 	if (event.type != SDL_KEYDOWN)
+	{
 		return;
+	}
 
+	// Basic orientations
 	const float MOVE_STEP = 0.2f;
 	const glm::vec3 camRight = cameraOrientation[0];
 	const glm::vec3 camUp = cameraOrientation[1];
 	const glm::vec3 camForward = -cameraOrientation[2];
+	// Basic switch cases pretty self explanatory
 	switch (event.key.keysym.sym)
 	{
 	case SDLK_1:
@@ -688,7 +759,6 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 		print("Starting Animation");
 		isAnimating = true;
 		animationTick = 0;
-		// Optional: Reset camera to starting position
 		cameraPosition = glm::vec3(0.0f, 0.0f, 6.0f);
 		cameraOrientation = glm::mat3(1.0f);
 		break;
@@ -722,6 +792,8 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 		break;
 	}
 }
+
+// All of the animation code
 const int ANIMATION_SPEED = 4;
 int ZoomInStartTime = 0;
 int ZoomInEndTime = ZoomInStartTime + 480 / ANIMATION_SPEED;
@@ -773,12 +845,13 @@ void updateAnimation()
 {
 
 	if (!isAnimating)
+	{
 		return;
+	}
 
-	// Phase 1: Orbit and switch to Phong shading for 60 ticks (frames)
 	if (animationTick == 0)
 	{
-		savingFrames = true;
+		// savingFrames = true;
 		applyMaterialToObject("sphere", "Red");
 		applyMaterialToObject("tall_box", "Blue");
 		applyMaterialToObject("short_box", "Red");
@@ -788,16 +861,9 @@ void updateAnimation()
 		applyMaterialToObject("back_wall", "White");
 		currentRenderer = &pointCloudRenderer;
 		WireframeBool = true;
-		// window.toggleFullscreen();
 		cameraPosition = glm::vec3(0.0f, 0.0f, 18.0f);
 		cameraOrientation = glm::mat3(1.0f);
 	}
-	// Example:
-	// if (animationTick >= someStartTime && animationTick < someEndTime)
-	// {
-	//     setRoughnessForObject("metal_object", animationMetalRoughness);
-	//     setAbsorptionForObject("water_object", animationWaterAbsorption);
-	// }
 	if (animationTick >= ZoomInStartTime && animationTick < ZoomInEndTime)
 	{
 		cameraPosition.z -= 0.025 * ANIMATION_SPEED;
@@ -909,6 +975,7 @@ void updateAnimation()
 	animationTick++;
 }
 
+// Parse the triangles from given OBJ files
 std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float scalingFactor, const glm::vec3 &translation = glm::vec3(0.0f), const glm::mat3 &rotation = glm::mat3(1.0f))
 {
 
@@ -917,13 +984,16 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 	// Vector of Vertices
 	std::vector<glm::vec3> vertices;
 
+	// Vector of texture vertices, for cobbles
 	std::vector<glm::vec2> textureVertices;
 
 	// ifstream
 	std::ifstream file(filename);
 	// Check working
 	if (!file.is_open())
+	{
 		return modelTriangles;
+	}
 
 	// string = to line
 	std::string line;
@@ -937,6 +1007,7 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 	// Keep track of the current material name for the triangles
 	std::string currentMaterialName;
 
+	// Default properties
 	MaterialProperties currentMaterialProperties = {
 		false, false, false, false, 0.0f, 1.0f, 1.0f, glm::vec3(0.0f), glm::vec3(0.0f)};
 
@@ -961,12 +1032,13 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 		// Prefix is the first token
 		const std::string &prefix = tokens[0];
 
-		// Check vertex
+		// For vertex
 		if (prefix == "v" && tokens.size() >= 4)
 		{
 			// Push back and scaling
 			vertices.push_back(rotation * glm::vec3(std::stof(tokens[1]) * scalingFactor, std::stof(tokens[2]) * scalingFactor, std::stof(tokens[3]) * scalingFactor) + translation);
 		}
+		// Vertex textures
 		else if (prefix == "vt" && tokens.size() >= 3)
 		{
 			// Push back texture vertex
@@ -974,10 +1046,12 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 				std::stof(tokens[1]),
 				std::stof(tokens[2])));
 		}
+		// Assign the object name
 		else if (prefix == "o" && tokens.size() >= 2)
 		{
 			currentMaterialName = tokens[1];
 		}
+		// Faces
 		else if (prefix == "f" && tokens.size() >= 4)
 		{
 			// Parse the vertex indices and texture indices
@@ -1019,14 +1093,16 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 			// If there is a texture
 			if (currentTextureIndex >= 0)
 			{
-				bool valid = true;
+				bool textureIsValid = true;
 				for (int i = 0; i < 3; i++)
 				{
 					// if the texture index is invalid, set valid to false
 					if (textureIndex[i] < 0 || textureIndex[i] >= static_cast<int>(textureVertices.size()))
-						valid = false;
+					{
+						textureIsValid = false;
+					}
 				}
-				if (valid)
+				if (textureIsValid)
 				{
 					// Get the texture map for the current material
 					const TextureMap &texture = textures[currentTextureIndex];
@@ -1050,29 +1126,30 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 			triangle.objectName = currentMaterialName;
 			modelTriangles.push_back(triangle);
 		}
+		// For materials
 		else if (prefix == "usemtl" && tokens.size() >= 2)
 		{
 			// Look up the material properties for the current material name
 			auto material = materialProperties.find(tokens[1]);
-			// If the material name exists in the map, set currentMaterialProperties to the corresponding properties; otherwise, set it to default values
 			if (material != materialProperties.end())
 			{
 				currentMaterialProperties = material->second;
 			}
-			else
+			else // Not in map
 			{
+				// Default
 				currentMaterialProperties = MaterialProperties{
 					false, false, false, false, 0.0f, 1.0f, 1.0f, glm::vec3(0.0f), glm::vec3(0.0f)};
 			}
 
-			// Check if the material name exists in the textureIndexByMaterial map
+			// Check if the material name exists in map
 			auto texture = textureIndexByMaterial.find(tokens[1]);
 			// If it exists, set currentTextureIndex to the corresponding index
 			if (texture != textureIndexByMaterial.end())
 			{
 				currentTextureIndex = texture->second;
 			}
-			else
+			else // Not in map
 			{
 				currentTextureIndex = -1;
 			}
@@ -1094,15 +1171,21 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 	return modelTriangles;
 }
 
+// Array of vertex normals of size 3
 std::array<glm::vec3, 3> vertexNormals(const ModelTriangle &triangle)
 {
+	// Change the smooth based on object
 	float smoothThreshold = std::cos(glm::radians(45.0f));
+
+	// Sphere always smooths out
 	if (triangle.objectName == "sphere")
 	{
 		smoothThreshold = -1.0f;
 	}
+
 	std::array<glm::vec3, 3> normals;
 
+	// Loop over the three vertices
 	for (int i = 0; i < 3; ++i)
 	{
 		// Assign vertices
@@ -1113,15 +1196,21 @@ std::array<glm::vec3, 3> vertexNormals(const ModelTriangle &triangle)
 		for (const ModelTriangle &other : triangles)
 		{
 			if (other.vertices[0] != vertex && other.vertices[1] != vertex && other.vertices[2] != vertex)
+			{
 				continue;
+			}
 
 			// Calculate the normal of the other triangle
-			glm::vec3 otherNormal = glm::normalize(glm::cross(other.vertices[1] - other.vertices[0], other.vertices[2] - other.vertices[0]));
+			glm::vec3 crossProduct1 = other.vertices[1] - other.vertices[0];
+			glm::vec3 crossProduct2 = other.vertices[2] - other.vertices[0];
+			glm::vec3 otherNormal = glm::normalize(glm::cross(crossProduct1, crossProduct2));
 
 			// Check if the angle between the normals is within the smooth threshold
 			// If the dot product is greater than the threshold, they are considered smooth
 			if (glm::dot(otherNormal, triangle.normal) > smoothThreshold)
+			{
 				normalSum += otherNormal;
+			}
 		}
 		// Normalize the summed normal to get the average normal for the vertex
 		normals[i] = glm::normalize(normalSum);
@@ -1139,7 +1228,9 @@ std::vector<Colour> colourParseOBJ(const std::string &filename)
 	std::ifstream file(filename);
 	// Check working
 	if (!file.is_open())
+	{
 		return colours;
+	}
 
 	// Current line
 	std::string line;
@@ -1213,6 +1304,7 @@ int main(int argc, char *argv[])
 	// Get the environment map and its dimensions
 	environmentMap = textures[textureIndexByMaterial["Environment"]];
 
+	// all obj files in here
 	std::vector<std::string> filenNames = {
 		"src/textured-cornell-box",
 		"src/sphere",
@@ -1241,24 +1333,29 @@ int main(int argc, char *argv[])
 		{
 			translation = glm::vec3(0.58f, 0.055f, -0.96f);
 		}
-		// For the bunny
+		// For the bunny use approximates based on looks
 		else if (i == 2)
 		{
+			// Approximate scaling factor
 			scalingFactor = 0.005f;
+
+			// Approximate translation
 			translation = glm::vec3(0.17f, -0.4f, 0.50f);
 			rotation = glm::mat3(
 				glm::vec3(1.0f, 0.0f, 0.0f),
 				glm::vec3(0.0f, 0.0f, -1.0f),
 				glm::vec3(0.0f, 1.0f, 0.0f));
+			// Should end up on top of the small_box
 		}
-		std::vector<ModelTriangle> parsedTriangles = triangleParseOBJ(
-			filenNames[i] + ".obj", scalingFactor, translation, rotation);
+		// Parse all the triangles
+		std::vector<ModelTriangle> parsedTriangles = triangleParseOBJ(filenNames[i] + ".obj", scalingFactor, translation, rotation);
+
+		// Insert into the main triangles section
 		triangles.insert(triangles.end(), parsedTriangles.begin(), parsedTriangles.end());
 	}
 
-	// Clear the vector? Given by intellisense so im going to trust it
+	// Clear and reserve vector
 	vertexNormalsByTriangle.clear();
-	// Reserve the space, also given by intellisense
 	vertexNormalsByTriangle.reserve(triangles.size());
 
 	glm::vec3 boxMin(std::numeric_limits<float>::max());
@@ -1297,16 +1394,22 @@ int main(int argc, char *argv[])
 	{
 		// We MUST poll for events - otherwise the window will freeze !
 		while (window.pollForInputEvents(event))
+		{
 			handleEvent(event, window);
+		}
 
 		newFrameRendered = (currentRenderer != &rayTracedRenderer);
 		// In C++ we can't use "." notation for dynamic dispatch, so we have to use -> instead :o(
 		currentRenderer->draw(window);
 
 		if (isOrbiting != 0)
+		{
 			rotateY(cameraPosition, cameraOrientation, isOrbiting);
+		}
 		if (isLookAtEnabled)
+		{
 			lookAt(cameraPosition, cameraOrientation, glm::vec3(0.0f));
+		}
 		// Need to ask the SDL window to render the frame, otherwise nothing actually gets shown on the screen !
 		window.renderFrame();
 
@@ -1318,7 +1421,9 @@ int main(int argc, char *argv[])
 		{
 			std::string paddedCounter = std::to_string(frameCounter);
 			while (paddedCounter.length() < 6)
+			{
 				paddedCounter = "0" + paddedCounter;
+			}
 			// Use whichever image file format works best on your platform (comment out the one you don't need)
 			window.savePPM("saved-frames", paddedCounter + ".ppm");
 			// window.saveBMP("saved-frames", paddedCounter + ".bmp");
