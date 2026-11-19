@@ -1,10 +1,4 @@
 #include "Renderer.h"
-#include "RedNoiseRenderer.h"
-#include "BlueNoiseRenderer.h"
-#include "GreenNoiseRenderer.h"
-#include "WhiteNoiseRenderer.h"
-#include "ColourSpectrumRenderer.h"
-#include "TriangleSpectrumRenderer.h"
 #include "RasterisedRenderer.h"
 #include "PointCloudRenderer.h"
 #include "RayTracedRenderer.h"
@@ -89,16 +83,6 @@ DrawingWindow window = DrawingWindow(WIDTH, HEIGHT);
 
 // Create instances of each renderer
 
-// Noise colours (Not told to do this but had some fun)
-RedNoiseRenderer redNoise = RedNoiseRenderer();
-GreenNoiseRenderer greenNoise = GreenNoiseRenderer();
-BlueNoiseRenderer blueNoise = BlueNoiseRenderer();
-WhiteNoiseRenderer whiteNoise = WhiteNoiseRenderer();
-
-// Colour spectrums
-ColourSpectrumRenderer colourSpectrum = ColourSpectrumRenderer();
-TriangleSpectrumRenderer triangleSpectrum = TriangleSpectrumRenderer();
-
 // Cornell Box and Sphere Renderers
 RasterisedRenderer rasterisedRenderer = RasterisedRenderer();
 PointCloudRenderer pointCloudRenderer = PointCloudRenderer();
@@ -112,8 +96,8 @@ int frameCounter = 0;
 bool newFrameRendered = false;
 
 // Filenames
-std::string objFilename = "/Assets/textured-cornell-box";
-std::string objFilenameSphere = "/Assets/sphere";
+std::string objFilename = "src/textured-cornell-box";
+std::string objFilenameSphere = "src/sphere";
 
 // Core 3D rendering data structures (for when we eventually get around to working in 3D ;o)
 // (I have now got round to working in 3D ;o)
@@ -1079,7 +1063,7 @@ std::vector<Colour> colourParseOBJ(const std::string &filename)
 		// Reading texture maps for materials
 		else if (prefix == "map_Kd" && tokens.size() >= 2)
 		{
-			std::string texturePath = "../../../05 Navigation and Transformation/models/" + tokens[1];
+			std::string texturePath = "src/" + tokens[1];
 			loadTexture(colourName, texturePath);
 		}
 	}
@@ -1091,17 +1075,17 @@ int main(int argc, char *argv[])
 {
 
 	// Load in textures
-	loadTexture("Environment", "../../../05 Navigation and Transformation/models/environment2.ppm");
+	loadTexture("Environment", "src/environment2.ppm");
 
 	// Get the environment map and its dimensions
 	environmentMap = textures[textureIndexByMaterial["Environment"]];
 
-	std::vector<std::string> filennames = {
-		"../../../05 Navigation and Transformation/models/textured-cornell-box",
-		"../../../07 Lighting and Shading/resources/sphere",
-		"../../../05 Navigation and Transformation/models/Bunny-LowPoly",
+	std::vector<std::string> filenNames = {
+		"src/textured-cornell-box",
+		"src/sphere",
+		"src/Bunny-LowPoly",
 	};
-	std::string cornellBoxFilename = filennames[0]; // Use the first filename
+	std::string cornellBoxFilename = filenNames[0]; // Use the first filename
 	// Get the colour pallete
 	palette = colourParseOBJ(cornellBoxFilename + ".mtl");
 	// Add it all to a Dictionary from a vector
@@ -1111,7 +1095,7 @@ int main(int argc, char *argv[])
 	}
 
 	// Parse the triangles
-	for (size_t i = 0; i < filennames.size(); ++i)
+	for (size_t i = 0; i < filenNames.size(); ++i)
 	{
 		// Set the scaling factor, translation, and rotation based on the index of the filename
 		float scalingFactor = 0.35f;
@@ -1134,7 +1118,7 @@ int main(int argc, char *argv[])
 				glm::vec3(0.0f, 1.0f, 0.0f));
 		}
 		std::vector<ModelTriangle> parsedTriangles = triangleParseOBJ(
-			filennames[i] + ".obj", scalingFactor, translation, rotation);
+			filenNames[i] + ".obj", scalingFactor, translation, rotation);
 		triangles.insert(triangles.end(), parsedTriangles.begin(), parsedTriangles.end());
 	}
 

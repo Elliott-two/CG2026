@@ -18,7 +18,6 @@ private:
     // Shading
     std::array<Colour, 3> gourandShading(RayTriangleIntersection intersection);
     Colour phongShading(const RayTriangleIntersection &intersection);
-    RayTriangleIntersection mirrorShading(RayTriangleIntersection intersection);
     Colour depthOfFieldShading(float u, float v, const glm::vec3 &rayDirection);
 
     // Helpers
