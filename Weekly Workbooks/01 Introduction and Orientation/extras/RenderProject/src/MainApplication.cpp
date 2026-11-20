@@ -126,6 +126,8 @@ int raysPerPixel = 4;
 // Camera and light positions
 glm::vec3 cameraPosition(0.0, 0.0, 6.0);
 glm::mat3 cameraOrientation = glm::mat3(1.0f);
+glm::vec3 cameraResetStartPosition = cameraPosition;
+glm::mat3 cameraResetStartOrientation = cameraOrientation;
 glm::vec3 lightPosition(0.0, 0.8, 0.0);
 
 // Animation flags
@@ -193,6 +195,7 @@ void applyMaterialToObject(const std::string &objectName, const std::string &mat
 		colour = paletteColour->second;
 	}
 
+	bool anythingChanged = false;
 	// For every triangle in triangles
 	for (ModelTriangle &triangle : triangles)
 	{
@@ -202,6 +205,22 @@ void applyMaterialToObject(const std::string &objectName, const std::string &mat
 			continue;
 		}
 
+		bool anythingChangedForThisTriangle = (triangle.colour.red != colour.red ||
+											   triangle.colour.green != colour.green ||
+											   triangle.colour.blue != colour.blue ||
+											   triangle.isMirror != properties.isMirror ||
+											   triangle.isWater != properties.isWater ||
+											   triangle.isRefractive != properties.isRefractive ||
+											   triangle.isMetallic != properties.isMetallic ||
+											   triangle.absorption != properties.absorption ||
+											   triangle.fresnelReflectance != properties.fresnelReflectance ||
+											   triangle.roughness != properties.roughness ||
+											   triangle.stretchFactor != properties.stretchFactor ||
+											   triangle.refractiveIndex != properties.refractiveIndex);
+		if (anythingChangedForThisTriangle)
+		{
+			anythingChanged = true;
+		}
 		// Assign all of the properties
 		triangle.colour = colour;
 		triangle.textureIndex = -1;
@@ -219,8 +238,11 @@ void applyMaterialToObject(const std::string &objectName, const std::string &mat
 	// We must force both redraws
 	// Force RayTrace as the colour can be seen from the camera
 	// Force PhotonMap as survivability is based on colour and material type
-	forceRayTraceRedraw = true;
-	forcePhotonMapRedraw = true;
+	if (anythingChanged)
+	{
+		forceRayTraceRedraw = true;
+		forcePhotonMapRedraw = true;
+	}
 }
 
 // Function to change the objects roughness
@@ -232,7 +254,28 @@ void setRoughnessForObject(const std::string &objectName, float roughness)
 		// Cannot change the roughness of a non metallic object
 		if (triangle.objectName == objectName && triangle.isMetallic)
 		{
+			if (triangle.roughness == roughness)
+			{
+				return;
+			}
 			triangle.roughness = roughness;
+		}
+	}
+
+	// Must force redraw of the scene as the colours can be seen
+	forceRayTraceRedraw = true;
+}
+
+// Function to change the objects roughness
+void increaseRoughnessForObject(const std::string &objectName, float roughness)
+{
+	// Loop over every triangle to check for the objects name
+	for (ModelTriangle &triangle : triangles)
+	{
+		// Cannot change the roughness of a non metallic object
+		if (triangle.objectName == objectName && triangle.isMetallic)
+		{
+			triangle.roughness += roughness;
 		}
 	}
 
@@ -246,7 +289,26 @@ void setAbsorptionForObject(const std::string &objectName, const glm::vec3 &abso
 	{
 		if (triangle.objectName == objectName && triangle.isWater)
 		{
+			if (triangle.absorption == absorption)
+			{
+				return;
+			}
 			triangle.absorption = absorption;
+		}
+	}
+
+	// Force both redraw as light changes based on absorption
+	forceRayTraceRedraw = true;
+	forcePhotonMapRedraw = true;
+}
+
+void increaseAbsorptionForObject(const std::string &objectName, const glm::vec3 &absorption)
+{
+	for (ModelTriangle &triangle : triangles)
+	{
+		if (triangle.objectName == objectName && triangle.isWater)
+		{
+			triangle.absorption += absorption;
 		}
 	}
 
@@ -369,13 +431,13 @@ void panCamera(glm::mat3 &cameraOrientation, float degrees)
 }
 
 // Look up or down without actually moving the camera
-void tiltCamera(glm::mat3 &cameraOrientation, int degrees)
+void tiltCamera(glm::mat3 &cameraOrientation, float degrees)
 {
 	// Our forward vector
 	float forwardY = -cameraOrientation[2].y;
 
 	// Stop the camera from tilting too far up or down
-	if ((degrees > 0 && forwardY > 0.95f) || (degrees < 0 && forwardY < -0.95f))
+	if ((degrees > 0.0f && forwardY > 0.95f) || (degrees < 0.0f && forwardY < -0.95f))
 	{
 		return;
 	}
@@ -808,14 +870,18 @@ int WireFrameEndTime = WireFrameHoldEndTime;
 int WireFrameBuffer = WireFrameEndTime + 50 / ANIMATION_SPEED;
 int OrbitStartTime = WireFrameBuffer + 60 / ANIMATION_SPEED;
 int OrbitBuffer = OrbitStartTime + 16 / ANIMATION_SPEED;
-int OrbitEndTime = OrbitBuffer + 1460 / ANIMATION_SPEED;
+int OrbitEndTime = OrbitBuffer + 1420 / ANIMATION_SPEED;
 int OrbitBuffer2 = OrbitEndTime + 420 / ANIMATION_SPEED;
 int PanStartTime = OrbitBuffer2;
 int PanEndTime = PanStartTime + 400 / ANIMATION_SPEED;
 int PanBackStartTime = PanEndTime + 200 / ANIMATION_SPEED;
 int PanBackEndTime = PanBackStartTime + 400 / ANIMATION_SPEED;
-int GouraudStartTime = PanBackEndTime + 80 / ANIMATION_SPEED;
-int GouraudEndTime = GouraudStartTime + 120 / ANIMATION_SPEED;
+int TiltStartTime = PanBackEndTime + 200 / ANIMATION_SPEED;
+int TiltEndTime = TiltStartTime + 400 / ANIMATION_SPEED;
+int TiltBackStartTime = TiltEndTime + 200 / ANIMATION_SPEED;
+int TiltBackEndTime = TiltBackStartTime + 400 / ANIMATION_SPEED;
+int GouraudStartTime = TiltBackEndTime + 80 / ANIMATION_SPEED;
+int GouraudEndTime = GouraudStartTime + 250 / ANIMATION_SPEED;
 int PhongStartTime = GouraudEndTime;
 int PhongEndTime = PhongStartTime + 120 / ANIMATION_SPEED;
 int softShadowsStartTime = PhongEndTime + 120 / ANIMATION_SPEED;
@@ -826,9 +892,38 @@ int ZoomInStartTime2 = PanBack2EndTime;
 int ZoomInEndTime2 = ZoomInStartTime2 + 400 / ANIMATION_SPEED;
 int ZoomOutStartTime2 = ZoomInEndTime2;
 int ZoomOutEndTime2 = ZoomOutStartTime2 + 400 / ANIMATION_SPEED;
-int unPanCameraStartTime = ZoomOutEndTime2 + 320 / ANIMATION_SPEED;
-int unPanCameraEndTime = unPanCameraStartTime + 120 / ANIMATION_SPEED;
-int DepthOfFieldStartTime = unPanCameraEndTime;
+int UnPanCameraStartTime = ZoomOutEndTime2 + 320 / ANIMATION_SPEED;
+int UnPanCameraEndTime = UnPanCameraStartTime + 120 / ANIMATION_SPEED;
+int SetForPhotonStartTime = UnPanCameraEndTime;
+int SetForPhotonEndTime = SetForPhotonStartTime + 360 / ANIMATION_SPEED;
+int PhotonMapppingStartTime = SetForPhotonEndTime;
+int PhotonMapppingEndTime = PhotonMapppingStartTime + 800 / ANIMATION_SPEED;
+int SetForDebuggingStartTime = PhotonMapppingEndTime;
+int SetForDebuggingEndTime = SetForDebuggingStartTime + 240 / ANIMATION_SPEED;
+int StartDebuggingStartTime = SetForDebuggingEndTime;
+int StartDebuggingEndTime = StartDebuggingStartTime + 16 / ANIMATION_SPEED;
+int EndDebuggingStartTime = StartDebuggingEndTime;
+int EndDebuggingEndTime = EndDebuggingStartTime + 120 / ANIMATION_SPEED;
+int TurnMetallicOnStartTime = EndDebuggingEndTime;
+int TurnMetallicOnEndTime = TurnMetallicOnStartTime + 100 / ANIMATION_SPEED;
+int IncreaseRoughnessStartTime = TurnMetallicOnEndTime;
+int IncreaseRoughnessEndTime = IncreaseRoughnessStartTime + 100 / ANIMATION_SPEED;
+int SwapMaterialsStartTime = IncreaseRoughnessEndTime;
+int SwapMaterialsEndTime = SwapMaterialsStartTime + 100 / ANIMATION_SPEED;
+int EnvironmentMapStartTime = SwapMaterialsEndTime;
+int EnvironmentMapEndTime = EnvironmentMapStartTime + 900 / ANIMATION_SPEED;
+int EnvironmentMapMidpointTime = EnvironmentMapStartTime + (EnvironmentMapEndTime - EnvironmentMapStartTime) / 2;
+int GlassAndWaterStartTime = EnvironmentMapEndTime;
+int GlassAndWaterEndTime = GlassAndWaterStartTime + 450 / ANIMATION_SPEED;
+int AbsorptionStartTime = GlassAndWaterEndTime;
+int AbsorptionEndTime = AbsorptionStartTime + 300 / ANIMATION_SPEED;
+int CausticsStartTime = AbsorptionEndTime;
+int CausticsEndTime = CausticsStartTime + 350 / ANIMATION_SPEED;
+int PhotonDebugStartTime = CausticsStartTime + 100 / ANIMATION_SPEED;
+int PhotonDebugEndTime = PhotonDebugStartTime + 40 / ANIMATION_SPEED;
+int CameraResetStartTime = CausticsEndTime;
+int CameraResetEndTime = CameraResetStartTime + 100 / ANIMATION_SPEED;
+int DepthOfFieldStartTime = CameraResetEndTime;
 int DepthOfFieldEndTime = DepthOfFieldStartTime + 100 / ANIMATION_SPEED;
 int SwirlStartTime = DepthOfFieldEndTime;
 int SwirlEndTime = SwirlStartTime + 100 / ANIMATION_SPEED;
@@ -850,7 +945,7 @@ void updateAnimation()
 		return;
 	}
 
-	if (animationTick == 0)
+	if (animationTick == 0) // Reset
 	{
 		// savingFrames = true;
 		applyMaterialToObject("sphere", "Red");
@@ -865,15 +960,15 @@ void updateAnimation()
 		cameraPosition = glm::vec3(0.0f, 0.0f, 18.0f);
 		cameraOrientation = glm::mat3(1.0f);
 	}
-	if (animationTick >= ZoomInStartTime && animationTick < ZoomInEndTime)
+	if (animationTick >= ZoomInStartTime && animationTick < ZoomInEndTime) // Zoom in
 	{
 		cameraPosition.z -= 0.025 * ANIMATION_SPEED;
 	}
-	if (animationTick >= ZoomOutStartTime && animationTick < ZoomOutEndTime)
+	if (animationTick >= ZoomOutStartTime && animationTick < ZoomOutEndTime) // Zoom out
 	{
 		cameraPosition.z += 0.025 * ANIMATION_SPEED;
 	}
-	if (animationTick >= BounceStartTime && animationTick < BounceEndTime)
+	if (animationTick >= BounceStartTime && animationTick < BounceEndTime) // Bounce
 	{
 		cameraPosition.z -= 0.025 * ANIMATION_SPEED;
 	}
@@ -887,14 +982,12 @@ void updateAnimation()
 	}
 	if (animationTick >= OrbitStartTime && animationTick < OrbitBuffer)
 	{
-		cameraPosition = glm::vec3(0.0f, 0.0f, 6.0f);
 		isOrbiting = 0.25f * ANIMATION_SPEED; // Start orbiting clockwise
 		isLookAtEnabled = true;				  // Enable LookAt
 	}
 	if (animationTick >= OrbitEndTime && animationTick < OrbitBuffer2)
 	{
 		isOrbiting = 0;
-		cameraPosition = glm::vec3(0.0f, 0.0f, 6.0f);
 	}
 	if (animationTick >= PanStartTime && animationTick < PanEndTime)
 	{
@@ -907,11 +1000,22 @@ void updateAnimation()
 		// currentRenderer = &rayTracedRenderer;
 		panCamera(cameraOrientation, -0.035f * ANIMATION_SPEED);
 	}
+	if (animationTick >= TiltStartTime && animationTick < TiltEndTime)
+	{
+		// currentRenderer = &rayTracedRenderer;
+		tiltCamera(cameraOrientation, 0.035f * ANIMATION_SPEED);
+	}
+	if (animationTick >= TiltBackStartTime && animationTick < TiltBackEndTime)
+	{
+		// currentRenderer = &rayTracedRenderer;
+		tiltCamera(cameraOrientation, -0.035f * ANIMATION_SPEED);
+	}
 	if (animationTick >= GouraudStartTime && animationTick < GouraudEndTime)
 	{
 		// currentRenderer = &rayTracedRenderer;
 		GouraudShadingEnabled = true;
-		cameraPosition.z -= 0.005 * ANIMATION_SPEED;
+		cameraPosition.z -= 0.008 * ANIMATION_SPEED;
+		cameraPosition.x += 0.0015 * ANIMATION_SPEED;
 	}
 	if (animationTick >= PhongStartTime && animationTick < PhongEndTime)
 	{
@@ -930,26 +1034,184 @@ void updateAnimation()
 	{
 		// currentRenderer = &rayTracedRenderer;
 		softShadowsEnabled = false;
-		panCamera(cameraOrientation, 0.02f * ANIMATION_SPEED);
+		panCamera(cameraOrientation, 0.08f * ANIMATION_SPEED);
 	}
 	if (animationTick >= ZoomInStartTime2 && animationTick < ZoomInEndTime2)
 	{
 		// currentRenderer = &rayTracedRenderer;
 		cameraPosition.z -= 0.005 * ANIMATION_SPEED;
+		worldMirroringEnabled = true;
 	}
 	if (animationTick >= ZoomOutStartTime2 && animationTick < ZoomOutEndTime2)
 	{
 		// currentRenderer = &rayTracedRenderer;
-		cameraPosition.z += 0.005 * ANIMATION_SPEED;
+		cameraPosition.z += 0.01 * ANIMATION_SPEED;
 	}
-	if (animationTick >= unPanCameraStartTime && animationTick < unPanCameraEndTime)
+	if (animationTick >= UnPanCameraStartTime && animationTick < UnPanCameraEndTime)
 	{
 		// currentRenderer = &rayTracedRenderer;
-		panCamera(cameraOrientation, -0.02f * ANIMATION_SPEED);
+		panCamera(cameraOrientation, -0.08f * ANIMATION_SPEED);
+		cameraPosition.x -= 0.003125 * ANIMATION_SPEED;
 	}
+	if (animationTick >= SetForPhotonStartTime && animationTick < SetForPhotonEndTime)
+	{
+		panCamera(cameraOrientation, 0.08f * ANIMATION_SPEED);
+		cameraPosition.x += 0.003125 * ANIMATION_SPEED;
+		cameraPosition.z -= 0.005 * ANIMATION_SPEED;
+	}
+	if (animationTick >= PhotonMapppingStartTime && animationTick < PhotonMapppingEndTime)
+	{
+		photonMappingEnabled = true;
+	}
+	if (animationTick >= SetForDebuggingStartTime && animationTick < SetForDebuggingEndTime)
+	{
+		panCamera(cameraOrientation, -0.12f * ANIMATION_SPEED);
+		cameraPosition.x -= 0.0046875 * ANIMATION_SPEED;
+		cameraPosition.z += 0.0075 * ANIMATION_SPEED;
+	}
+	if (animationTick >= StartDebuggingStartTime && animationTick < StartDebuggingEndTime)
+	{
+		photonDebuggingEnabled = true;
+	}
+	if (animationTick >= EndDebuggingStartTime && animationTick < EndDebuggingEndTime)
+	{
+		photonDebuggingEnabled = false;
+	}
+	if (animationTick >= TurnMetallicOnStartTime && animationTick < TurnMetallicOnEndTime)
+	{
+		photonMappingEnabled = false;
+		worldMetallicEnabled = true;
+		applyMaterialToObject("Bunny", "Iron");
+		setRoughnessForObject("Bunny", 0.05f);
+		panCamera(cameraOrientation, -0.06f * ANIMATION_SPEED);
+		cameraPosition.z -= 0.01875 * ANIMATION_SPEED;
+	}
+	if (animationTick >= IncreaseRoughnessStartTime && animationTick < IncreaseRoughnessEndTime)
+	{
+		increaseRoughnessForObject("Bunny", 0.0075f * ANIMATION_SPEED);
+	}
+	if (animationTick >= SwapMaterialsStartTime && animationTick < SwapMaterialsEndTime)
+	{
+		applyMaterialToObject("Bunny", "Gold");
+		applyMaterialToObject("short_box", "Aluminium");
+		panCamera(cameraOrientation, 0.06f * ANIMATION_SPEED);
+		cameraPosition.z += 0.01875 * ANIMATION_SPEED;
+	}
+	if (animationTick >= EnvironmentMapStartTime && animationTick < EnvironmentMapEndTime)
+	{
+		environmentMapEnabled = true;
+		isOrbiting = 0.4f * ANIMATION_SPEED;
+		environmentMapSeenByCamera = animationTick >= EnvironmentMapMidpointTime;
+	}
+	if (animationTick >= EnvironmentMapEndTime)
+	{
+		isOrbiting = 0;
+		environmentMapSeenByCamera = false;
+	}
+
+	if (animationTick >= GlassAndWaterStartTime && animationTick < GlassAndWaterEndTime)
+	{
+		worldRefractiveEnabled = true;
+		environmentMapEnabled = false;
+		raysPerPixel = 16;
+
+		if (animationTick == GlassAndWaterStartTime)
+		{
+			applyMaterialToObject("sphere", "Glass");
+			applyMaterialToObject("short_box", "Glass");
+		}
+		if (animationTick == GlassAndWaterStartTime + (GlassAndWaterEndTime - GlassAndWaterStartTime) / 2)
+		{
+			applyMaterialToObject("short_box", "Water");
+		}
+
+		panCamera(cameraOrientation, 0.003125f * ANIMATION_SPEED);
+		cameraPosition.z -= 0.0025f * ANIMATION_SPEED;
+	}
+
+	if (animationTick >= AbsorptionStartTime && animationTick < AbsorptionEndTime)
+	{
+		worldRefractiveEnabled = true;
+
+		if (animationTick == AbsorptionStartTime)
+		{
+			setAbsorptionForObject("short_box", glm::vec3(0.0f));
+		}
+
+		float absorptionProgress =
+			static_cast<float>(animationTick - AbsorptionStartTime) /
+			static_cast<float>(AbsorptionEndTime - AbsorptionStartTime);
+		glm::vec3 absorption =
+			glm::mix(glm::vec3(0.0f),
+					 glm::vec3(0.90f, 0.25f, 0.15f),
+					 absorptionProgress);
+		setAbsorptionForObject("short_box", absorption);
+	}
+
+	if (animationTick >= CausticsStartTime && animationTick < CausticsEndTime)
+	{
+		worldRefractiveEnabled = true;
+		photonMappingEnabled = true;
+	}
+	else if (animationTick >= CausticsEndTime)
+	{
+		photonMappingEnabled = false;
+	}
+
+	if (animationTick >= PhotonDebugStartTime && animationTick < PhotonDebugEndTime)
+	{
+		photonDebuggingEnabled = true;
+	}
+	else
+	{
+		photonDebuggingEnabled = false;
+	}
+
+	if (animationTick >= CameraResetStartTime && animationTick < CameraResetEndTime)
+	{
+		isOrbiting = 0;
+		isLookAtEnabled = false;
+
+		if (animationTick == CameraResetStartTime)
+		{
+			cameraResetStartPosition = cameraPosition;
+			cameraResetStartOrientation = cameraOrientation;
+		}
+
+		int resetFrames = CameraResetEndTime - CameraResetStartTime;
+		int elapsedResetFrames = animationTick - CameraResetStartTime;
+		float resetProgress =
+			static_cast<float>(elapsedResetFrames) /
+			static_cast<float>(resetFrames - 1);
+		resetProgress = glm::clamp(resetProgress, 0.0f, 1.0f);
+
+		cameraPosition = glm::mix(cameraResetStartPosition,
+								  glm::vec3(0.0f, 0.0f, 6.0f),
+								  resetProgress);
+
+		glm::vec3 column0 = glm::mix(cameraResetStartOrientation[0],
+									 glm::vec3(1.0f, 0.0f, 0.0f),
+									 resetProgress);
+		glm::vec3 column1 = glm::mix(cameraResetStartOrientation[1],
+									 glm::vec3(0.0f, 1.0f, 0.0f),
+									 resetProgress);
+		glm::vec3 column2 = glm::mix(cameraResetStartOrientation[2],
+									 glm::vec3(0.0f, 0.0f, 1.0f),
+									 resetProgress);
+		cameraOrientation = glm::mat3(column0, column1, column2);
+
+		if (animationTick == CameraResetEndTime - 1)
+		{
+			cameraPosition = glm::vec3(0.0f, 0.0f, 6.0f);
+			cameraOrientation = glm::mat3(1.0f);
+		}
+	}
+
 	if (animationTick >= DepthOfFieldStartTime && animationTick < DepthOfFieldEndTime)
 	{
+		isOrbiting = 0;
 		// currentRenderer = &rayTracedRenderer;
+		raysPerPixel = 16;
 		depthOfFieldEnabled = true;
 		rayTracedRenderer.focusOnPixel(411, 151);
 	}
@@ -970,6 +1232,7 @@ void updateAnimation()
 	{
 		// currentRenderer = &rayTracedRenderer;
 		reflexLensEnabled = false;
+		raysPerPixel = 4;
 		rayTracedRenderer.focusOnPixel(313, 231);
 	}
 
@@ -1181,7 +1444,7 @@ std::array<glm::vec3, 3> vertexNormals(const ModelTriangle &triangle)
 	float smoothThreshold = std::cos(glm::radians(45.0f));
 
 	// Sphere always smooths out
-	if (triangle.objectName == "sphere" || triangle.objectName == "bunny" )
+	if (triangle.objectName == "sphere" || triangle.objectName == "Bunny")
 	{
 		smoothThreshold = -1.0f;
 	}
