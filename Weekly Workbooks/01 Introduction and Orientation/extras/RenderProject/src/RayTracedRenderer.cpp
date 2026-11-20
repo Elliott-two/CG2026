@@ -119,6 +119,7 @@ constexpr float EXPOSURE = 1.25f;
 
 // Thread-local storage for the view origin, which is used in depth of field calculations
 static thread_local glm::vec3 viewOrigin(0.0f);
+static thread_local const std::string *convexObjectBeingShaded = nullptr;
 static std::vector<int> visibleToOriginalIndex;
 
 // If I need a random float
@@ -190,6 +191,10 @@ static glm::vec3 howOccluded(const glm::vec3 &origin, const glm::vec3 &direction
     // Loop over all non-culled triangles and check for intersections with the ray
     for (const ModelTriangle &triangle : nonCulledTriangles)
     {
+        if (convexObjectBeingShaded != nullptr && triangle.objectName == *convexObjectBeingShaded)
+        {
+            continue;
+        }
 
         // Calculate the distance to the intersection point if the ray intersects with the triangle
         float triangleDistance;
@@ -590,6 +595,9 @@ Colour RayTracedRenderer::shadingHelper(RayTriangleIntersection intersection)
         return shaded.intersectedTriangle.colour;
     }
 
+    const bool shadedObjectIsConvex = (shaded.intersectedTriangle.objectName == "sphere");
+    convexObjectBeingShaded = shadedObjectIsConvex ? &shaded.intersectedTriangle.objectName : nullptr;
+
     if (shaded.intersectedTriangle.textureIndex >= 0)
         shaded.intersectedTriangle.colour = texturedShading(shaded);
 
@@ -615,6 +623,8 @@ Colour RayTracedRenderer::shadingHelper(RayTriangleIntersection intersection)
             intersection.intersectionPoint
         );
     }
+
+    convexObjectBeingShaded = nullptr;
 
     return pixelColour;
 }
@@ -756,7 +766,7 @@ std::array<Colour, 3> RayTracedRenderer::gourandShading(RayTriangleIntersection 
     // Light each vertex using its smooth normal
     std::array<Colour, 3> colours;
     for (int index = 0; index < 3; index++)
-        colours[index] = calculateLighting(triangle.vertices[index], normals[index], triangle.colour, triangle.normal, triangle.vertices[index]);
+        colours[index] = calculateLighting(triangle.vertices[index], normals[index], triangle.colour, normals[index], triangle.vertices[index]);
     return colours;
 }
 

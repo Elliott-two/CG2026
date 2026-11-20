@@ -1181,7 +1181,7 @@ std::array<glm::vec3, 3> vertexNormals(const ModelTriangle &triangle)
 	float smoothThreshold = std::cos(glm::radians(45.0f));
 
 	// Sphere always smooths out
-	if (triangle.objectName == "sphere")
+	if (triangle.objectName == "sphere" || triangle.objectName == "bunny" )
 	{
 		smoothThreshold = -1.0f;
 	}
