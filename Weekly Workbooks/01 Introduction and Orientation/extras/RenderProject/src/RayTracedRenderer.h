@@ -12,7 +12,7 @@ public:
 private:
     // Core raytracing functions
     RayTriangleIntersection getClosestValidIntersection(glm::vec3 cameraPosition, glm::vec3 rayDirection);
-    Colour calculateLighting(glm::vec3 point, glm::vec3 normal, Colour baseColour, glm::vec3 faceNormal);
+    Colour calculateLighting(glm::vec3 point, glm::vec3 normal, Colour baseColour, glm::vec3 faceNormal, glm::vec3 shadowOrigin);
     Colour texturedShading(RayTriangleIntersection intersection);
 
     // Shading

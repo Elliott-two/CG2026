@@ -610,7 +610,9 @@ Colour RayTracedRenderer::shadingHelper(RayTriangleIntersection intersection)
             shaded.intersectionPoint,
             shaded.intersectedTriangle.normal,
             shaded.intersectedTriangle.colour,
-            shaded.intersectedTriangle.normal);
+            shaded.intersectedTriangle.normal,
+            intersection.intersectionPoint
+        );
     }
 
     return pixelColour;
@@ -681,12 +683,12 @@ static std::vector<glm::vec3> sampleAreaLight(const glm::vec3 &origin, const glm
     return total;
 }
 
-Colour RayTracedRenderer::calculateLighting(glm::vec3 point, glm::vec3 normal, Colour baseColour, glm::vec3 faceNormal)
+Colour RayTracedRenderer::calculateLighting(glm::vec3 point, glm::vec3 normal, Colour baseColour, glm::vec3 faceNormal, glm::vec3 shadowOrigin)
 {
     glm::vec3 normalForShading = glm::normalize(normal);
 
     // Offset to avoid shadow acne
-    glm::vec3 origin = point + faceNormal * 0.005f;
+    glm::vec3 origin = shadowOrigin + faceNormal * 0.005f;
 
     glm::vec3 viewDir = glm::normalize(viewOrigin - point);
 
@@ -750,7 +752,7 @@ std::array<Colour, 3> RayTracedRenderer::gourandShading(RayTriangleIntersection 
     // Light each vertex using its smooth normal
     std::array<Colour, 3> colours;
     for (int index = 0; index < 3; index++)
-        colours[index] = calculateLighting(triangle.vertices[index], normals[index], triangle.colour, triangle.normal);
+        colours[index] = calculateLighting(triangle.vertices[index], normals[index], triangle.colour, triangle.normal, triangle.vertices[index]);
     return colours;
 }
 
@@ -786,6 +788,16 @@ glm::vec3 RayTracedRenderer::barycentricWeights(const RayTriangleIntersection &i
     return glm::vec3(u, v, 1.0f - u - v);
 }
 
+static glm::vec3 smoothShadowOrigin(const ModelTriangle &triangle, const std::array<glm::vec3, 3> &vertexNormals, const glm::vec3 &weights, const glm::vec3 &point){
+    glm::vec3 offset(0.0f);
+    for (int i = 0; i < 3; i++)
+    {
+        float below = -glm::dot(point - triangle.vertices[i], vertexNormals[i]);
+        offset += weights[i] * std::max(0.0f, below) * vertexNormals[i];
+    }
+    return point + offset;
+}
+
 // Phong shading implementation
 Colour RayTracedRenderer::phongShading(const RayTriangleIntersection &intersection)
 {
@@ -797,7 +809,7 @@ Colour RayTracedRenderer::phongShading(const RayTriangleIntersection &intersecti
     if (intersection.triangleIndex >= vertexNormalsByTriangle.size())
     {
         // Fall back to flat shading if something is out of sync
-        return calculateLighting(intersection.intersectionPoint, triangleNormal, colour, triangleNormal);
+        return calculateLighting(intersection.intersectionPoint, triangleNormal, colour, triangleNormal, intersection.intersectionPoint);
     }
     const std::array<glm::vec3, 3> &normals = vertexNormalsByTriangle[intersection.triangleIndex];
 
@@ -811,8 +823,10 @@ Colour RayTracedRenderer::phongShading(const RayTriangleIntersection &intersecti
         normal = glm::normalize(interpolated);
     }
 
+    glm::vec3 shadowOrigin = smoothShadowOrigin(intersection.intersectedTriangle, normals, weights, intersection.intersectionPoint);
+
     // Light the actual hit point with the interpolated normal
-    return calculateLighting(intersection.intersectionPoint, normal, colour, triangleNormal);
+    return calculateLighting(intersection.intersectionPoint, normal, colour, triangleNormal, shadowOrigin);
 }
 
 // Textured shading implementation based on my rasteriser, but with barycentric interpolation of the texture coordinates
