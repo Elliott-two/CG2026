@@ -856,8 +856,8 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 
 constexpr int ANIMATION_FPS = 25;
 
-const bool ANIMATION_DRAFT_RUN = true;
-const bool ANIMATION_RASTER_PREVIEW = true;
+const bool ANIMATION_DRAFT_RUN = false;
+const bool ANIMATION_RASTER_PREVIEW = false;
 
 struct AnimationSegment
 {
@@ -1040,10 +1040,13 @@ void updateAnimation()
 		return;
 	}
 
+	waterTime = static_cast<float>(animationTick) / ANIMATION_FPS;
+
 	if (animationTick == 0)
 	{
 		resetAnimationState();
-		savingFrames = false;
+		savingFrames = true;
+		frameCounter = 0;
 	}
 
 	if (animationTick == 1 && !ANIMATION_DRAFT_RUN)
@@ -1691,6 +1694,20 @@ int main(int argc, char *argv[])
 
 	glm::vec3 tempCameraPosition = cameraPosition;
 	glm::mat3 tempCameraOrientation = cameraOrientation;
+
+	const int RESUME_FROM_FRAME = 687; // e.g. 812 if frames 000000-000811 are already saved
+
+	if (RESUME_FROM_FRAME > 0)
+	{
+		isAnimating = true;
+		animationTick = 0;
+		for (int tick = 0; tick <= RESUME_FROM_FRAME; tick++)
+		{
+			updateAnimation(); // sets the camera, materials and switches exactly as the full run would
+		}
+		frameCounter = RESUME_FROM_FRAME;
+		savingFrames = !ANIMATION_DRAFT_RUN;
+	}
 
 	while (true)
 	{

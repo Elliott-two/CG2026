@@ -1,6 +1,6 @@
 #include "RayTracedRenderer.h"
 #include <random>
-
+#include <thread>
 // Get all the needed external variables and vectors
 
 // Width and Height of the screen
@@ -183,7 +183,7 @@ static glm::vec3 computeBeerLambertTransmission(const glm::vec3 &absorption, flo
 }
 
 // Returns a percentage of light returned based on how much of the light the point can see
-// If it goes through refracted objects then it gets tinted 
+// If it goes through refracted objects then it gets tinted
 static glm::vec3 howOccluded(const glm::vec3 &origin, const glm::vec3 &direction, float maxDistance)
 {
     static thread_local std::vector<hitShadow> hits;
@@ -507,36 +507,43 @@ void RayTracedRenderer::draw(DrawingWindow &window)
         photonMapChanged = false;
     }
 
-    for (int x = 0; x < WIDTH; x++)
+    const unsigned threadCount = std::max(1u, std::thread::hardware_concurrency() / 2);
+    std::vector<std::thread> workers;
+
+    for (unsigned threadIndex = 0; threadIndex < threadCount; threadIndex++)
     {
-        for (int y = 0; y < HEIGHT; y++)
-        {
-            // Calculate the direction of the ray from the camera through the pixel
-            float u = (x + 0.5f - WIDTH / 2.0f) / (IMAGE_SCALE * focalLength);
-            float v = (HEIGHT / 2.0f - (y + 0.5f)) / (IMAGE_SCALE * focalLength);
-
-            // Normailise for consistency
-            glm::vec3 rayDirection = glm::normalize(cameraOrientation * glm::vec3(u, v, -1.0f));
-
-            // Define Pixel colour first
-            Colour pixelColour;
-
-            // Check if depth of field is enabled, if so use the depth of field shading, otherwise use the standard shading
-            if (depthOfFieldEnabled)
+        workers.emplace_back([&, threadIndex]()
+                             {
+            // Interleaved columns (0, 8, 16, … for thread 0) so every thread gets a mix of easy and hard areas
+            for (int x = static_cast<int>(threadIndex); x < WIDTH; x += static_cast<int>(threadCount))
             {
-                // Call depthOfFieldShading with the pixel coordinates (u, v) to get the pixel colour
-                pixelColour = depthOfFieldShading(u, v, rayDirection);
-            }
-            else
-            {
-                pixelColour = traceRay(cameraPosition, rayDirection, 0);
-            }
+                for (int y = 0; y < HEIGHT; y++)
+                {
+                    // ---- your existing per-pixel code, unchanged ----
+                    float u = (x + 0.5f - WIDTH / 2.0f) / (IMAGE_SCALE * focalLength);
+                    float v = (HEIGHT / 2.0f - (y + 0.5f)) / (IMAGE_SCALE * focalLength);
+                    glm::vec3 rayDirection = glm::normalize(cameraOrientation * glm::vec3(u, v, -1.0f));
 
-            // Convert the Colour object to a 32-bit integer in ARGB format for rendering
-            uint32_t pixelColourValue = (255 << 24) | (pixelColour.red << 16) | (pixelColour.green << 8) | pixelColour.blue;
+                    Colour pixelColour;
+                    if (depthOfFieldEnabled)
+                    {
+                        pixelColour = depthOfFieldShading(u, v, rayDirection);
+                    }
+                    else
+                    {
+                        pixelColour = traceRay(cameraPosition, rayDirection, 0);
+                    }
 
-            window.setPixelColour(x, y, pixelColourValue);
-        }
+                    uint32_t pixelColourValue = (255 << 24) | (pixelColour.red << 16) | (pixelColour.green << 8) | pixelColour.blue;
+                    window.setPixelColour(x, y, pixelColourValue);
+                }
+            } });
+    }
+
+    // Wait for every thread to finish before the frame is shown or saved
+    for (std::thread &worker : workers)
+    {
+        worker.join();
     }
 
     // If photon debugging is enabled and photon mapping is enabled, render the photon maps for debugging purposes
@@ -570,7 +577,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
                 {
                     continue;
                 }
-                
+
                 window.setPixelColour(x, y, photonColours[mapIndex]);
             }
         }
@@ -620,8 +627,7 @@ Colour RayTracedRenderer::shadingHelper(RayTriangleIntersection intersection)
             shaded.intersectedTriangle.normal,
             shaded.intersectedTriangle.colour,
             shaded.intersectedTriangle.normal,
-            intersection.intersectionPoint
-        );
+            intersection.intersectionPoint);
     }
 
     convexObjectBeingShaded = nullptr;
@@ -802,7 +808,8 @@ glm::vec3 RayTracedRenderer::barycentricWeights(const RayTriangleIntersection &i
     return glm::vec3(u, v, 1.0f - u - v);
 }
 
-static glm::vec3 smoothShadowOrigin(const ModelTriangle &triangle, const std::array<glm::vec3, 3> &vertexNormals, const glm::vec3 &weights, const glm::vec3 &point){
+static glm::vec3 smoothShadowOrigin(const ModelTriangle &triangle, const std::array<glm::vec3, 3> &vertexNormals, const glm::vec3 &weights, const glm::vec3 &point)
+{
     glm::vec3 offset(0.0f);
     for (int i = 0; i < 3; i++)
     {
@@ -1153,7 +1160,7 @@ Colour RayTracedRenderer::mirrorredRay(const RayTriangleIntersection &intersecti
     return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium);
 }
 
-// Used for squasing a 2-D grid 
+// Used for squasing a 2-D grid
 static glm::vec2 squashGrid(float u, float v)
 {
     float x = 2.0f * u - 1.0f;
@@ -1166,7 +1173,7 @@ static glm::vec2 squashGrid(float u, float v)
 // Tracks a ray after a mettalic hit
 Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool insideMedium, float distanceThroughMedium)
 {
-    // Assign a triangle variable for ease of access 
+    // Assign a triangle variable for ease of access
     const ModelTriangle &triangle = intersection.intersectedTriangle;
 
     // If the normal is facing the wrong way, we flip it
@@ -1176,8 +1183,7 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
         faceNormal = -faceNormal;
     }
 
-
-    // This is just a sync checker 
+    // This is just a sync checker
     if (intersection.triangleIndex >= vertexNormalsByTriangle.size())
     {
         // Fall back to mirror shading if something is out of sync
@@ -1198,7 +1204,7 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
     {
         normal = glm::normalize(interpolatedNormal);
 
-        // Flip the normal if its facing the wrong way 
+        // Flip the normal if its facing the wrong way
         if (glm::dot(direction, normal) > 0.0f)
         {
             normal = -normal;
@@ -1219,13 +1225,13 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
     int seedY = static_cast<int>(std::round(intersection.intersectionPoint.y * 1000.0f));
     int seedZ = static_cast<int>(std::round(intersection.intersectionPoint.z * 1000.0f));
 
-    // Build in seed stuff from c++ 
+    // Build in seed stuff from c++
     // Uniform distribution for an even spread
     std::seed_seq seed{seedX, seedY, seedZ};
     std::mt19937 generator(seed);
     std::uniform_real_distribution<float> localDistribution(0.0f, 1.0f);
 
-    // Flip the up vector if we are too parallel 
+    // Flip the up vector if we are too parallel
     glm::vec3 helperUp = glm::vec3(0.0f, 1.0f, 0.0f);
     if (std::abs(reflectedDirection.y) > 0.999f)
     {
@@ -1261,7 +1267,7 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
     {
         for (int j = 0; j < gridSize; j++)
         {
-            // Fuzzy direction used for roughness 
+            // Fuzzy direction used for roughness
             glm::vec3 fuzzyDirection = reflectedDirection;
 
             // If its not rough then we dont need to do anything to do with randomness
@@ -1287,7 +1293,7 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
                 continue;
             }
 
-            // Send it back through trace ray NOT metallic ray as we do not know what we are going to hit 
+            // Send it back through trace ray NOT metallic ray as we do not know what we are going to hit
             Colour sampleColour = traceRay(
                 intersection.intersectionPoint + faceNormal * SURFACE_OFFSET,
                 fuzzyDirection,
@@ -1318,7 +1324,7 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
             insideMedium);
         accumulatedColour = glm::vec3(sampleColour.red, sampleColour.green, sampleColour.blue);
     }
-    
+
     // Appling fresnel tint
     // Calculate the cosine angle
     float cosTheta = glm::clamp(glm::dot(-direction, normal), 0.0f, 1.0f);
@@ -1656,10 +1662,11 @@ static glm::vec3 randomDownwardDirection()
 static glm::vec3 randomHemisphereDirection(const glm::vec3 &normal)
 {
     glm::vec3 direction = randomDownwardDirection();
-    
+
     glm::vec3 worldUp(1.0f, 0.0f, 0.0f);
 
-    if (std::abs(normal.z) < 0.999f){
+    if (std::abs(normal.z) < 0.999f)
+    {
         worldUp = glm::vec3(0.0f, 0.0f, 1.0f);
     }
 
@@ -1852,7 +1859,7 @@ void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::
 
     glm::vec3 surfaceColour = glm::vec3(colour.red, colour.green, colour.blue) / 255.0f;
 
-    // Survival according to the largest channel 
+    // Survival according to the largest channel
     glm::vec3 reflectedPower = power * surfaceColour;
 
     float maxPhotonIn = std::max(power.r, std::max(power.g, power.b));
@@ -1860,7 +1867,8 @@ void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::
 
     float survival = 0.0f;
 
-    if (maxPhotonIn > 0.0f){
+    if (maxPhotonIn > 0.0f)
+    {
         survival = std::min(1.0f, maxPhotonOut / maxPhotonIn);
     }
 
