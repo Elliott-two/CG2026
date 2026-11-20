@@ -115,6 +115,7 @@ const glm::vec3 MIN_INDIRECT_COLOUR(0.05f);
 constexpr uint32_t CAUSTIC_PHOTON_COLOUR = 0xFFFF00FF; // Colour for caustic photons in debugging mode (magenta)
 constexpr uint32_t GLOBAL_PHOTON_COLOUR = 0xFFFDF4DC;  // Colour for global photons in debugging mode (warm white)
 constexpr float SURFACE_OFFSET = 0.001f;               // Offset to avoid self-intersection when tracing rays from surfaces
+constexpr float EXPOSURE = 1.25f;
 
 // Thread-local storage for the view origin, which is used in depth of field calculations
 static thread_local glm::vec3 viewOrigin(0.0f);
@@ -714,7 +715,8 @@ Colour RayTracedRenderer::calculateLighting(glm::vec3 point, glm::vec3 normal, C
         total[0] += causticPhotonMap.estimateIrradiance(point, surfaceNormal, CAUSTIC_RADIUS);
     }
 
-    glm::vec3 brightness;
+    glm::vec3 rawBrightness;
+    glm::vec3 displayBrightness;
     if (photonMappingEnabled)
     {
         glm::vec3 surfaceNormal = glm::normalize(faceNormal);
@@ -726,17 +728,19 @@ Colour RayTracedRenderer::calculateLighting(glm::vec3 point, glm::vec3 normal, C
 
         usedAmbient = glm::max(usedAmbient, MIN_INDIRECT_COLOUR);
 
-        brightness = glm::clamp(total[0] + usedAmbient, 0.0f, 1.0f);
+        rawBrightness = total[0] + usedAmbient;
     }
     else
     {
-        brightness = glm::clamp(AMBIENT + total[0], 0.0f, 1.0f);
+        rawBrightness = AMBIENT + total[0];
     }
 
+    displayBrightness = 1.0f - glm::exp((-EXPOSURE * rawBrightness));
+
     return Colour(
-        std::min(255, int(std::round(baseColour.red * brightness.x + 255.0f * total[1].x))),
-        std::min(255, int(std::round(baseColour.green * brightness.y + 255.0f * total[1].y))),
-        std::min(255, int(std::round(baseColour.blue * brightness.z + 255.0f * total[1].z))));
+        std::min(255, int(std::round(baseColour.red * displayBrightness.x + 255.0f * total[1].x))),
+        std::min(255, int(std::round(baseColour.green * displayBrightness.y + 255.0f * total[1].y))),
+        std::min(255, int(std::round(baseColour.blue * displayBrightness.z + 255.0f * total[1].z))));
 }
 
 std::array<Colour, 3> RayTracedRenderer::gourandShading(RayTriangleIntersection intersection)

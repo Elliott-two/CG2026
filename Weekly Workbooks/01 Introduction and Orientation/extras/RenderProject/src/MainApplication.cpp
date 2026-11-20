@@ -1386,7 +1386,6 @@ int main(int argc, char *argv[])
 	lightMin = boxMin;
 	lightMax = boxMax;
 	lightPosition = (boxMin + boxMax) * 0.5f;
-	lightPosition.y -= 0.01f;
 
 	SDL_Event event;
 
