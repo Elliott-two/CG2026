@@ -126,8 +126,6 @@ int raysPerPixel = 4;
 // Camera and light positions
 glm::vec3 cameraPosition(0.0, 0.0, 6.0);
 glm::mat3 cameraOrientation = glm::mat3(1.0f);
-glm::vec3 cameraResetStartPosition = cameraPosition;
-glm::mat3 cameraResetStartOrientation = cameraOrientation;
 glm::vec3 lightPosition(0.0, 0.8, 0.0);
 
 // Animation flags
@@ -856,384 +854,423 @@ void handleEvent(SDL_Event event, DrawingWindow &window, Renderer *renderer = cu
 	}
 }
 
-// All of the animation code
-const int ANIMATION_SPEED = 4;
-int ZoomInStartTime = 0;
-int ZoomInEndTime = ZoomInStartTime + 480 / ANIMATION_SPEED;
-int ZoomOutStartTime = ZoomInEndTime;
-int ZoomOutEndTime = ZoomOutStartTime + 120 / ANIMATION_SPEED;
-int BounceStartTime = ZoomOutEndTime;
-int BounceEndTime = BounceStartTime + 120 / ANIMATION_SPEED;
-int WireFrameHoldStartTime = BounceEndTime;
-int WireFrameHoldEndTime = WireFrameHoldStartTime + 400 / ANIMATION_SPEED;
-int WireFrameEndTime = WireFrameHoldEndTime;
-int WireFrameBuffer = WireFrameEndTime + 50 / ANIMATION_SPEED;
-int OrbitStartTime = WireFrameBuffer + 60 / ANIMATION_SPEED;
-int OrbitBuffer = OrbitStartTime + 16 / ANIMATION_SPEED;
-int OrbitEndTime = OrbitBuffer + 1420 / ANIMATION_SPEED;
-int OrbitBuffer2 = OrbitEndTime + 420 / ANIMATION_SPEED;
-int PanStartTime = OrbitBuffer2;
-int PanEndTime = PanStartTime + 400 / ANIMATION_SPEED;
-int PanBackStartTime = PanEndTime + 200 / ANIMATION_SPEED;
-int PanBackEndTime = PanBackStartTime + 400 / ANIMATION_SPEED;
-int TiltStartTime = PanBackEndTime + 200 / ANIMATION_SPEED;
-int TiltEndTime = TiltStartTime + 400 / ANIMATION_SPEED;
-int TiltBackStartTime = TiltEndTime + 200 / ANIMATION_SPEED;
-int TiltBackEndTime = TiltBackStartTime + 400 / ANIMATION_SPEED;
-int GouraudStartTime = TiltBackEndTime + 80 / ANIMATION_SPEED;
-int GouraudEndTime = GouraudStartTime + 250 / ANIMATION_SPEED;
-int PhongStartTime = GouraudEndTime;
-int PhongEndTime = PhongStartTime + 120 / ANIMATION_SPEED;
-int softShadowsStartTime = PhongEndTime + 120 / ANIMATION_SPEED;
-int softShadowsEndTime = softShadowsStartTime + 240 / ANIMATION_SPEED;
-int PanBack2StartTime = softShadowsEndTime;
-int PanBack2EndTime = PanBack2StartTime + 120 / ANIMATION_SPEED;
-int ZoomInStartTime2 = PanBack2EndTime;
-int ZoomInEndTime2 = ZoomInStartTime2 + 400 / ANIMATION_SPEED;
-int ZoomOutStartTime2 = ZoomInEndTime2;
-int ZoomOutEndTime2 = ZoomOutStartTime2 + 400 / ANIMATION_SPEED;
-int UnPanCameraStartTime = ZoomOutEndTime2 + 320 / ANIMATION_SPEED;
-int UnPanCameraEndTime = UnPanCameraStartTime + 120 / ANIMATION_SPEED;
-int SetForPhotonStartTime = UnPanCameraEndTime;
-int SetForPhotonEndTime = SetForPhotonStartTime + 360 / ANIMATION_SPEED;
-int PhotonMapppingStartTime = SetForPhotonEndTime;
-int PhotonMapppingEndTime = PhotonMapppingStartTime + 800 / ANIMATION_SPEED;
-int SetForDebuggingStartTime = PhotonMapppingEndTime;
-int SetForDebuggingEndTime = SetForDebuggingStartTime + 240 / ANIMATION_SPEED;
-int StartDebuggingStartTime = SetForDebuggingEndTime;
-int StartDebuggingEndTime = StartDebuggingStartTime + 16 / ANIMATION_SPEED;
-int EndDebuggingStartTime = StartDebuggingEndTime;
-int EndDebuggingEndTime = EndDebuggingStartTime + 120 / ANIMATION_SPEED;
-int TurnMetallicOnStartTime = EndDebuggingEndTime;
-int TurnMetallicOnEndTime = TurnMetallicOnStartTime + 100 / ANIMATION_SPEED;
-int IncreaseRoughnessStartTime = TurnMetallicOnEndTime;
-int IncreaseRoughnessEndTime = IncreaseRoughnessStartTime + 100 / ANIMATION_SPEED;
-int SwapMaterialsStartTime = IncreaseRoughnessEndTime;
-int SwapMaterialsEndTime = SwapMaterialsStartTime + 100 / ANIMATION_SPEED;
-int EnvironmentMapStartTime = SwapMaterialsEndTime;
-int EnvironmentMapEndTime = EnvironmentMapStartTime + 900 / ANIMATION_SPEED;
-int EnvironmentMapMidpointTime = EnvironmentMapStartTime + (EnvironmentMapEndTime - EnvironmentMapStartTime) / 2;
-int GlassAndWaterStartTime = EnvironmentMapEndTime;
-int GlassAndWaterEndTime = GlassAndWaterStartTime + 450 / ANIMATION_SPEED;
-int AbsorptionStartTime = GlassAndWaterEndTime;
-int AbsorptionEndTime = AbsorptionStartTime + 300 / ANIMATION_SPEED;
-int CausticsStartTime = AbsorptionEndTime;
-int CausticsEndTime = CausticsStartTime + 350 / ANIMATION_SPEED;
-int PhotonDebugStartTime = CausticsStartTime + 100 / ANIMATION_SPEED;
-int PhotonDebugEndTime = PhotonDebugStartTime + 40 / ANIMATION_SPEED;
-int CameraResetStartTime = CausticsEndTime;
-int CameraResetEndTime = CameraResetStartTime + 100 / ANIMATION_SPEED;
-int DepthOfFieldStartTime = CameraResetEndTime;
-int DepthOfFieldEndTime = DepthOfFieldStartTime + 100 / ANIMATION_SPEED;
-int SwirlStartTime = DepthOfFieldEndTime;
-int SwirlEndTime = SwirlStartTime + 100 / ANIMATION_SPEED;
-int ReflexLensStartTime = SwirlEndTime;
-int ReflexLensEndTime = ReflexLensStartTime + 100 / ANIMATION_SPEED;
-int FocusOnWallStartTime = ReflexLensEndTime;
-int FocusOnWallEndTime = FocusOnWallStartTime + 100 / ANIMATION_SPEED;
+constexpr int ANIMATION_FPS = 25;
 
-// Change these values and call the setters below from updateAnimation() to
-// animate material properties without replacing the whole material.
-float animationMetalRoughness = 0.15f;
-glm::vec3 animationWaterAbsorption(0.90f, 0.25f, 0.15f);
+const bool ANIMATION_DRAFT_RUN = true;
+const bool ANIMATION_RASTER_PREVIEW = true;
+
+struct AnimationSegment
+{
+	int start;
+	int end;
+};
+
+static int animationTimelineCursor = 0;
+
+static AnimationSegment addSegment(float seconds)
+{
+	AnimationSegment segment;
+	segment.start = animationTimelineCursor;
+	segment.end = animationTimelineCursor + static_cast<int>(seconds * ANIMATION_FPS);
+	animationTimelineCursor = segment.end;
+	return segment;
+}
+
+const AnimationSegment WIREFRAME_FLY_IN = addSegment(4.0f);
+const AnimationSegment RASTER_ORBIT = addSegment(7.0f);
+const AnimationSegment PAN_AND_TILT = addSegment(4.0f);
+const AnimationSegment FLAT_RAY_TRACE = addSegment(3.0f);
+const AnimationSegment GOURAUD_SHADING = addSegment(3.0f);
+const AnimationSegment PHONG_SHADING = addSegment(3.0f);
+const AnimationSegment HARD_TO_SOFT_SHADOWS = addSegment(4.5f);
+const AnimationSegment MIRROR_REVEAL = addSegment(4.0f);
+const AnimationSegment GLOBAL_PHOTONS = addSegment(4.5f);
+const AnimationSegment GLOBAL_PHOTON_DEBUG = addSegment(2.0f);
+const AnimationSegment IRON_METAL = addSegment(1.5f);
+const AnimationSegment ROUGHNESS_SWEEP = addSegment(3.0f);
+const AnimationSegment GOLD_AND_ALUMINIUM = addSegment(3.0f);
+const AnimationSegment ENVIRONMENT_MAP = addSegment(6.0f);
+const AnimationSegment GLASS_REVEAL = addSegment(2.5f);
+const AnimationSegment WATER_REVEAL = addSegment(2.0f);
+const AnimationSegment ABSORPTION_FADE = addSegment(3.0f);
+const AnimationSegment CAUSTICS = addSegment(3.0f);
+const AnimationSegment CAUSTIC_DEBUG = addSegment(2.0f);
+const AnimationSegment FOCUS_PULL = addSegment(4.5f);
+const AnimationSegment SWIRL_BOKEH = addSegment(2.5f);
+const AnimationSegment RING_BOKEH = addSegment(2.5f);
+const AnimationSegment ENDING = addSegment(3.0f);
+const int ANIMATION_END_TICK = animationTimelineCursor;
+
+const AnimationSegment SHADING_CLOSE_UP = {GOURAUD_SHADING.start, PHONG_SHADING.end};
+
+const glm::vec3 SCENE_CENTRE(0.0f, 0.0f, 0.0f);
+const glm::vec3 WIDE_POSITION(0.0f, 0.0f, 6.0f);
+const glm::vec3 SPHERE_CENTRE(0.58f, 0.58f, -0.61f);
+const glm::vec3 BUNNY_CENTRE(0.32f, -0.10f, 0.49f);
+const glm::vec3 MIRROR_CENTRE(-0.23f, -0.38f, 0.03f);
+const glm::vec3 SPHERE_SHADOW_AREA(0.60f, 0.30f, -0.90f);
+const glm::vec3 MAGENTA_CORNER(-0.60f, -0.40f, -0.40f);
+const glm::vec3 CAUSTIC_AREA(0.80f, 0.35f, -0.90f);
+
+static bool inSegment(const AnimationSegment &segment)
+{
+	return animationTick >= segment.start && animationTick < segment.end;
+}
+
+static bool segmentStarts(const AnimationSegment &segment)
+{
+	return animationTick == segment.start;
+}
+
+static float segmentProgress(const AnimationSegment &segment)
+{
+	const int length = segment.end - segment.start;
+	if (length <= 1)
+	{
+		return 1.0f;
+	}
+	const float t = static_cast<float>(animationTick - segment.start) / static_cast<float>(length - 1);
+	return glm::clamp(t, 0.0f, 1.0f);
+}
+
+static float easedProgress(const AnimationSegment &segment)
+{
+	const float t = segmentProgress(segment);
+	return t * t * (3.0f - 2.0f * t);
+}
+
+static glm::vec3 currentCameraTarget(0.0f, 0.0f, 0.0f);
+static glm::vec3 shotStartPosition(0.0f, 0.0f, 6.0f);
+static glm::vec3 shotStartTarget(0.0f, 0.0f, 0.0f);
+
+static void placeCamera(const glm::vec3 &position, const glm::vec3 &target)
+{
+	cameraPosition = position;
+	currentCameraTarget = target;
+	lookAt(cameraPosition, cameraOrientation, target);
+}
+
+static void placeCameraYawPitch(const glm::vec3 &position, float yawDegrees, float pitchDegrees)
+{
+	const float yaw = glm::radians(yawDegrees);
+	const float pitch = glm::radians(pitchDegrees);
+	const glm::vec3 forward(std::sin(yaw) * std::cos(pitch),
+							std::sin(pitch),
+							-std::cos(yaw) * std::cos(pitch));
+	placeCamera(position, position + 6.0f * forward);
+}
+
+static void captureShotStart(const AnimationSegment &segment)
+{
+	if (segmentStarts(segment))
+	{
+		shotStartPosition = cameraPosition;
+		shotStartTarget = currentCameraTarget;
+	}
+}
+
+static void moveCameraTo(const AnimationSegment &segment, const glm::vec3 &position, const glm::vec3 &target, float travelSeconds)
+{
+	captureShotStart(segment);
+	const float travelTicks = travelSeconds * ANIMATION_FPS;
+	float t = 1.0f;
+	if (travelTicks > 0.0f)
+	{
+		t = glm::clamp(static_cast<float>(animationTick - segment.start) / travelTicks, 0.0f, 1.0f);
+	}
+	t = t * t * (3.0f - 2.0f * t);
+	placeCamera(glm::mix(shotStartPosition, position, t), glm::mix(shotStartTarget, target, t));
+}
+
+static void followCameraPath(const AnimationSegment &segment, const glm::vec3 &pathPosition, const glm::vec3 &pathTarget, float blendSeconds)
+{
+	captureShotStart(segment);
+	float blend = glm::clamp(static_cast<float>(animationTick - segment.start) / (blendSeconds * ANIMATION_FPS), 0.0f, 1.0f);
+	blend = blend * blend * (3.0f - 2.0f * blend);
+	placeCamera(glm::mix(shotStartPosition, pathPosition, blend), glm::mix(shotStartTarget, pathTarget, blend));
+}
+
+static void resetAnimationState()
+{
+
+	applyMaterialToObject("sphere", "Red");
+	applyMaterialToObject("Bunny", "Grey");
+	applyMaterialToObject("short_box", "Red");
+	applyMaterialToObject("tall_box", "Blue");
+	applyMaterialToObject("tall_box_mirror", "Mirror");
+	applyMaterialToObject("left_wall", "Magenta");
+	applyMaterialToObject("right_wall", "Yellow");
+	applyMaterialToObject("ceiling", "Cyan");
+	applyMaterialToObject("back_wall", "White");
+
+	GouraudShadingEnabled = false;
+	PhongShadingEnabled = false;
+	softShadowsEnabled = false;
+	worldMirroringEnabled = false;
+	worldRefractiveEnabled = false;
+	worldMetallicEnabled = false;
+	environmentMapEnabled = false;
+	environmentMapSeenByCamera = false;
+	photonMappingEnabled = false;
+	photonDebuggingEnabled = false;
+	depthOfFieldEnabled = false;
+	swirlEnabled = false;
+	reflexLensEnabled = false;
+	isSphereShowing = true;
+	isBlueBoxShowing = true;
+	isRedBoxShowing = true;
+	isBunnyShowing = true;
+
+	isOrbiting = 0.0f;
+	isLookAtEnabled = false;
+
+	raysPerPixel = 4;
+	focalDistance = 6.0f;
+	waterTime = 0.0f;
+
+	currentRenderer = &pointCloudRenderer;
+	WireframeBool = true;
+	forceRayTraceRedraw = true;
+}
 
 void updateAnimation()
 {
-
 	if (!isAnimating)
 	{
 		return;
 	}
 
-	if (animationTick == 0) // Reset
+	if (animationTick == 0)
 	{
-		// savingFrames = true;
-		applyMaterialToObject("sphere", "Red");
-		applyMaterialToObject("tall_box", "Blue");
-		applyMaterialToObject("short_box", "Red");
-		applyMaterialToObject("left_wall", "Magenta");
-		applyMaterialToObject("right_wall", "Yellow");
-		applyMaterialToObject("ceiling", "Cyan");
-		applyMaterialToObject("back_wall", "White");
-		currentRenderer = &pointCloudRenderer;
-		WireframeBool = true;
-		cameraPosition = glm::vec3(0.0f, 0.0f, 18.0f);
-		cameraOrientation = glm::mat3(1.0f);
+		resetAnimationState();
+		savingFrames = false;
 	}
-	if (animationTick >= ZoomInStartTime && animationTick < ZoomInEndTime) // Zoom in
+
+	if (animationTick == 1 && !ANIMATION_DRAFT_RUN)
 	{
-		cameraPosition.z -= 0.025 * ANIMATION_SPEED;
+		frameCounter = 0;
+		savingFrames = true;
 	}
-	if (animationTick >= ZoomOutStartTime && animationTick < ZoomOutEndTime) // Zoom out
+
+	if (animationTick >= ANIMATION_END_TICK)
 	{
-		cameraPosition.z += 0.025 * ANIMATION_SPEED;
+		isAnimating = false;
+		savingFrames = false;
+		print("Animation finished: " + std::to_string(frameCounter) + " frames saved");
+		return;
 	}
-	if (animationTick >= BounceStartTime && animationTick < BounceEndTime) // Bounce
+
+	if (inSegment(WIREFRAME_FLY_IN))
 	{
-		cameraPosition.z -= 0.025 * ANIMATION_SPEED;
+		placeCamera(glm::mix(glm::vec3(0.0f, 0.0f, 18.0f), WIDE_POSITION, easedProgress(WIREFRAME_FLY_IN)), SCENE_CENTRE);
+		WireframeBool = segmentProgress(WIREFRAME_FLY_IN) < 0.6f;
 	}
-	if (animationTick >= WireFrameHoldStartTime && animationTick < WireFrameHoldEndTime)
-	{
-		WireframeBool = true;
-	}
-	if (animationTick >= WireFrameEndTime && animationTick < WireFrameBuffer)
+
+	if (inSegment(RASTER_ORBIT))
 	{
 		WireframeBool = false;
+		const float angle = glm::radians(360.0f * easedProgress(RASTER_ORBIT));
+		placeCamera(glm::vec3(6.0f * std::sin(angle), 0.0f, 6.0f * std::cos(angle)), SCENE_CENTRE);
 	}
-	if (animationTick >= OrbitStartTime && animationTick < OrbitBuffer)
+
+	if (inSegment(PAN_AND_TILT))
 	{
-		isOrbiting = 0.25f * ANIMATION_SPEED; // Start orbiting clockwise
-		isLookAtEnabled = true;				  // Enable LookAt
+		const float t = segmentProgress(PAN_AND_TILT);
+		if (t < 0.5f)
+		{
+			placeCameraYawPitch(WIDE_POSITION, 15.0f * std::sin(2.0f * MAIN_PI * (t * 2.0f)), 0.0f);
+		}
+		else
+		{
+			placeCameraYawPitch(WIDE_POSITION, 0.0f, 10.0f * std::sin(2.0f * MAIN_PI * ((t - 0.5f) * 2.0f)));
+		}
 	}
-	if (animationTick >= OrbitEndTime && animationTick < OrbitBuffer2)
+
+	if (segmentStarts(FLAT_RAY_TRACE))
 	{
-		isOrbiting = 0;
+		currentRenderer = &rayTracedRenderer;
+		GouraudShadingEnabled = false;
+		PhongShadingEnabled = false;
+		forceRayTraceRedraw = true;
 	}
-	if (animationTick >= PanStartTime && animationTick < PanEndTime)
+	if (inSegment(FLAT_RAY_TRACE))
 	{
-		// currentRenderer = &rayTracedRenderer;
-		isLookAtEnabled = false; // Disable LookAt
-		panCamera(cameraOrientation, 0.035f * ANIMATION_SPEED);
+		moveCameraTo(FLAT_RAY_TRACE, glm::vec3(0.25f, 0.45f, 3.2f), SPHERE_CENTRE, 3.0f);
 	}
-	if (animationTick >= PanBackStartTime && animationTick < PanBackEndTime)
+
+	if (segmentStarts(GOURAUD_SHADING))
 	{
-		// currentRenderer = &rayTracedRenderer;
-		panCamera(cameraOrientation, -0.035f * ANIMATION_SPEED);
-	}
-	if (animationTick >= TiltStartTime && animationTick < TiltEndTime)
-	{
-		// currentRenderer = &rayTracedRenderer;
-		tiltCamera(cameraOrientation, 0.035f * ANIMATION_SPEED);
-	}
-	if (animationTick >= TiltBackStartTime && animationTick < TiltBackEndTime)
-	{
-		// currentRenderer = &rayTracedRenderer;
-		tiltCamera(cameraOrientation, -0.035f * ANIMATION_SPEED);
-	}
-	if (animationTick >= GouraudStartTime && animationTick < GouraudEndTime)
-	{
-		// currentRenderer = &rayTracedRenderer;
 		GouraudShadingEnabled = true;
-		cameraPosition.z -= 0.008 * ANIMATION_SPEED;
-		cameraPosition.x += 0.0015 * ANIMATION_SPEED;
+		PhongShadingEnabled = false;
 	}
-	if (animationTick >= PhongStartTime && animationTick < PhongEndTime)
+	if (segmentStarts(PHONG_SHADING))
 	{
-		// currentRenderer = &rayTracedRenderer;
-		PhongShadingEnabled = true;
 		GouraudShadingEnabled = false;
-	}
-	if (animationTick >= softShadowsStartTime && animationTick < softShadowsEndTime)
-	{
-		// currentRenderer = &rayTracedRenderer;
 		PhongShadingEnabled = true;
-		GouraudShadingEnabled = false;
-		softShadowsEnabled = true;
 	}
-	if (animationTick >= PanBack2StartTime && animationTick < PanBack2EndTime)
+	if (inSegment(SHADING_CLOSE_UP))
 	{
-		// currentRenderer = &rayTracedRenderer;
-		softShadowsEnabled = false;
-		panCamera(cameraOrientation, 0.08f * ANIMATION_SPEED);
+		moveCameraTo(SHADING_CLOSE_UP, glm::vec3(0.30f, 0.50f, 2.7f), SPHERE_CENTRE, 6.0f);
 	}
-	if (animationTick >= ZoomInStartTime2 && animationTick < ZoomInEndTime2)
+
+	if (inSegment(HARD_TO_SOFT_SHADOWS))
 	{
-		// currentRenderer = &rayTracedRenderer;
-		cameraPosition.z -= 0.005 * ANIMATION_SPEED;
-		worldMirroringEnabled = true;
+		moveCameraTo(HARD_TO_SOFT_SHADOWS, glm::vec3(0.0f, 0.25f, 3.2f), SPHERE_SHADOW_AREA, 1.5f);
+		softShadowsEnabled = segmentProgress(HARD_TO_SOFT_SHADOWS) >= 0.5f;
 	}
-	if (animationTick >= ZoomOutStartTime2 && animationTick < ZoomOutEndTime2)
+
+	if (inSegment(MIRROR_REVEAL))
 	{
-		// currentRenderer = &rayTracedRenderer;
-		cameraPosition.z += 0.01 * ANIMATION_SPEED;
+		moveCameraTo(MIRROR_REVEAL, glm::vec3(0.75f, 0.30f, 2.6f), MIRROR_CENTRE, 2.0f);
+		worldMirroringEnabled = segmentProgress(MIRROR_REVEAL) >= 0.5f;
 	}
-	if (animationTick >= UnPanCameraStartTime && animationTick < UnPanCameraEndTime)
+
+	if (inSegment(GLOBAL_PHOTONS))
 	{
-		// currentRenderer = &rayTracedRenderer;
-		panCamera(cameraOrientation, -0.08f * ANIMATION_SPEED);
-		cameraPosition.x -= 0.003125 * ANIMATION_SPEED;
+		moveCameraTo(GLOBAL_PHOTONS, glm::vec3(0.50f, 0.20f, 3.0f), MAGENTA_CORNER, 1.5f);
+		photonMappingEnabled = segmentProgress(GLOBAL_PHOTONS) >= 0.5f;
 	}
-	if (animationTick >= SetForPhotonStartTime && animationTick < SetForPhotonEndTime)
-	{
-		panCamera(cameraOrientation, 0.08f * ANIMATION_SPEED);
-		cameraPosition.x += 0.003125 * ANIMATION_SPEED;
-		cameraPosition.z -= 0.005 * ANIMATION_SPEED;
-	}
-	if (animationTick >= PhotonMapppingStartTime && animationTick < PhotonMapppingEndTime)
-	{
-		photonMappingEnabled = true;
-	}
-	if (animationTick >= SetForDebuggingStartTime && animationTick < SetForDebuggingEndTime)
-	{
-		panCamera(cameraOrientation, -0.12f * ANIMATION_SPEED);
-		cameraPosition.x -= 0.0046875 * ANIMATION_SPEED;
-		cameraPosition.z += 0.0075 * ANIMATION_SPEED;
-	}
-	if (animationTick >= StartDebuggingStartTime && animationTick < StartDebuggingEndTime)
+
+	if (inSegment(GLOBAL_PHOTON_DEBUG))
 	{
 		photonDebuggingEnabled = true;
 	}
-	if (animationTick >= EndDebuggingStartTime && animationTick < EndDebuggingEndTime)
+
+	if (segmentStarts(IRON_METAL))
 	{
 		photonDebuggingEnabled = false;
-	}
-	if (animationTick >= TurnMetallicOnStartTime && animationTick < TurnMetallicOnEndTime)
-	{
 		photonMappingEnabled = false;
+		softShadowsEnabled = false;
 		worldMetallicEnabled = true;
 		applyMaterialToObject("Bunny", "Iron");
 		setRoughnessForObject("Bunny", 0.05f);
-		panCamera(cameraOrientation, -0.06f * ANIMATION_SPEED);
-		cameraPosition.z -= 0.01875 * ANIMATION_SPEED;
 	}
-	if (animationTick >= IncreaseRoughnessStartTime && animationTick < IncreaseRoughnessEndTime)
+	if (inSegment(IRON_METAL))
 	{
-		increaseRoughnessForObject("Bunny", 0.0075f * ANIMATION_SPEED);
+		moveCameraTo(IRON_METAL, glm::vec3(0.55f, 0.05f, 2.2f), BUNNY_CENTRE, 1.5f);
 	}
-	if (animationTick >= SwapMaterialsStartTime && animationTick < SwapMaterialsEndTime)
+
+	if (inSegment(ROUGHNESS_SWEEP))
+	{
+		setRoughnessForObject("Bunny", glm::mix(0.05f, 0.8f, segmentProgress(ROUGHNESS_SWEEP)));
+	}
+
+	if (segmentStarts(GOLD_AND_ALUMINIUM))
 	{
 		applyMaterialToObject("Bunny", "Gold");
 		applyMaterialToObject("short_box", "Aluminium");
-		panCamera(cameraOrientation, 0.06f * ANIMATION_SPEED);
-		cameraPosition.z += 0.01875 * ANIMATION_SPEED;
 	}
-	if (animationTick >= EnvironmentMapStartTime && animationTick < EnvironmentMapEndTime)
+	if (inSegment(GOLD_AND_ALUMINIUM))
+	{
+		moveCameraTo(GOLD_AND_ALUMINIUM, glm::vec3(0.50f, 0.20f, 3.0f), glm::vec3(0.32f, -0.35f, 0.40f), 2.0f);
+	}
+
+	if (segmentStarts(ENVIRONMENT_MAP))
 	{
 		environmentMapEnabled = true;
-		isOrbiting = 0.4f * ANIMATION_SPEED;
-		environmentMapSeenByCamera = animationTick >= EnvironmentMapMidpointTime;
 	}
-	if (animationTick >= EnvironmentMapEndTime)
+	if (inSegment(ENVIRONMENT_MAP))
 	{
-		isOrbiting = 0;
+		const float angle = glm::radians(glm::mix(-35.0f, 35.0f, easedProgress(ENVIRONMENT_MAP)));
+		followCameraPath(ENVIRONMENT_MAP, glm::vec3(4.5f * std::sin(angle), 0.3f, 4.5f * std::cos(angle)), SCENE_CENTRE, 1.5f);
+
+		environmentMapSeenByCamera = segmentProgress(ENVIRONMENT_MAP) >= 0.5f;
+	}
+
+	if (segmentStarts(GLASS_REVEAL))
+	{
 		environmentMapSeenByCamera = false;
+		worldRefractiveEnabled = true;
+		applyMaterialToObject("sphere", "Glass");
+		applyMaterialToObject("short_box", "Glass");
+	}
+	if (inSegment(GLASS_REVEAL))
+	{
+		moveCameraTo(GLASS_REVEAL, glm::vec3(0.05f, 0.15f, 3.4f), glm::vec3(0.45f, 0.10f, -0.20f), 2.5f);
 	}
 
-	if (animationTick >= GlassAndWaterStartTime && animationTick < GlassAndWaterEndTime)
+	if (segmentStarts(WATER_REVEAL))
 	{
-		worldRefractiveEnabled = true;
-		environmentMapEnabled = false;
-		raysPerPixel = 16;
-
-		if (animationTick == GlassAndWaterStartTime)
-		{
-			applyMaterialToObject("sphere", "Glass");
-			applyMaterialToObject("short_box", "Glass");
-		}
-		if (animationTick == GlassAndWaterStartTime + (GlassAndWaterEndTime - GlassAndWaterStartTime) / 2)
-		{
-			applyMaterialToObject("short_box", "Water");
-		}
-
-		panCamera(cameraOrientation, 0.003125f * ANIMATION_SPEED);
-		cameraPosition.z -= 0.0025f * ANIMATION_SPEED;
+		applyMaterialToObject("short_box", "Water");
+		setAbsorptionForObject("short_box", glm::vec3(0.0f));
+	}
+	if (inSegment(WATER_REVEAL))
+	{
 	}
 
-	if (animationTick >= AbsorptionStartTime && animationTick < AbsorptionEndTime)
+	if (inSegment(ABSORPTION_FADE))
 	{
-		worldRefractiveEnabled = true;
-
-		if (animationTick == AbsorptionStartTime)
-		{
-			setAbsorptionForObject("short_box", glm::vec3(0.0f));
-		}
-
-		float absorptionProgress =
-			static_cast<float>(animationTick - AbsorptionStartTime) /
-			static_cast<float>(AbsorptionEndTime - AbsorptionStartTime);
-		glm::vec3 absorption =
-			glm::mix(glm::vec3(0.0f),
-					 glm::vec3(0.90f, 0.25f, 0.15f),
-					 absorptionProgress);
-		setAbsorptionForObject("short_box", absorption);
+		setAbsorptionForObject("short_box", glm::mix(glm::vec3(0.0f), glm::vec3(0.90f, 0.25f, 0.15f), segmentProgress(ABSORPTION_FADE)));
 	}
 
-	if (animationTick >= CausticsStartTime && animationTick < CausticsEndTime)
+	if (segmentStarts(CAUSTICS))
 	{
-		worldRefractiveEnabled = true;
 		photonMappingEnabled = true;
 	}
-	else if (animationTick >= CausticsEndTime)
+	if (inSegment(CAUSTICS))
 	{
-		photonMappingEnabled = false;
+		moveCameraTo(CAUSTICS, glm::vec3(-0.10f, 0.30f, 2.8f), CAUSTIC_AREA, 2.0f);
 	}
 
-	if (animationTick >= PhotonDebugStartTime && animationTick < PhotonDebugEndTime)
+	if (inSegment(CAUSTIC_DEBUG))
 	{
 		photonDebuggingEnabled = true;
 	}
-	else
+
+	if (segmentStarts(FOCUS_PULL))
 	{
 		photonDebuggingEnabled = false;
-	}
-
-	if (animationTick >= CameraResetStartTime && animationTick < CameraResetEndTime)
-	{
-		isOrbiting = 0;
-		isLookAtEnabled = false;
-
-		if (animationTick == CameraResetStartTime)
-		{
-			cameraResetStartPosition = cameraPosition;
-			cameraResetStartOrientation = cameraOrientation;
-		}
-
-		int resetFrames = CameraResetEndTime - CameraResetStartTime;
-		int elapsedResetFrames = animationTick - CameraResetStartTime;
-		float resetProgress =
-			static_cast<float>(elapsedResetFrames) /
-			static_cast<float>(resetFrames - 1);
-		resetProgress = glm::clamp(resetProgress, 0.0f, 1.0f);
-
-		cameraPosition = glm::mix(cameraResetStartPosition,
-								  glm::vec3(0.0f, 0.0f, 6.0f),
-								  resetProgress);
-
-		glm::vec3 column0 = glm::mix(cameraResetStartOrientation[0],
-									 glm::vec3(1.0f, 0.0f, 0.0f),
-									 resetProgress);
-		glm::vec3 column1 = glm::mix(cameraResetStartOrientation[1],
-									 glm::vec3(0.0f, 1.0f, 0.0f),
-									 resetProgress);
-		glm::vec3 column2 = glm::mix(cameraResetStartOrientation[2],
-									 glm::vec3(0.0f, 0.0f, 1.0f),
-									 resetProgress);
-		cameraOrientation = glm::mat3(column0, column1, column2);
-
-		if (animationTick == CameraResetEndTime - 1)
-		{
-			cameraPosition = glm::vec3(0.0f, 0.0f, 6.0f);
-			cameraOrientation = glm::mat3(1.0f);
-		}
-	}
-
-	if (animationTick >= DepthOfFieldStartTime && animationTick < DepthOfFieldEndTime)
-	{
-		isOrbiting = 0;
-		// currentRenderer = &rayTracedRenderer;
-		raysPerPixel = 16;
+		photonMappingEnabled = false;
 		depthOfFieldEnabled = true;
-		rayTracedRenderer.focusOnPixel(411, 151);
+		swirlEnabled = false;
+		reflexLensEnabled = false;
+		raysPerPixel = 16;
 	}
-	if (animationTick >= SwirlStartTime && animationTick < SwirlEndTime)
+	if (inSegment(FOCUS_PULL))
 	{
-		// currentRenderer = &rayTracedRenderer;
+		moveCameraTo(FOCUS_PULL, WIDE_POSITION, SCENE_CENTRE, 1.5f);
+
+		const float travelTicks = 1.5f * ANIMATION_FPS;
+		const float pullTicks = static_cast<float>(FOCUS_PULL.end - FOCUS_PULL.start) - travelTicks;
+		float pull = glm::clamp((static_cast<float>(animationTick - FOCUS_PULL.start) - travelTicks) / pullTicks, 0.0f, 1.0f);
+		pull = pull * pull * (3.0f - 2.0f * pull);
+		focalDistance = glm::mix(5.3f, 7.0f, pull);
+	}
+
+	if (segmentStarts(SWIRL_BOKEH))
+	{
 		swirlEnabled = true;
-		rayTracedRenderer.focusOnPixel(273, 293);
+		reflexLensEnabled = false;
+		focalDistance = 5.5f;
 	}
-	if (animationTick >= ReflexLensStartTime && animationTick < ReflexLensEndTime)
+
+	if (segmentStarts(RING_BOKEH))
 	{
-		// currentRenderer = &rayTracedRenderer;
 		swirlEnabled = false;
 		reflexLensEnabled = true;
-		rayTracedRenderer.focusOnPixel(375, 365);
+		focalDistance = 6.6f;
 	}
-	if (animationTick >= FocusOnWallStartTime && animationTick < FocusOnWallEndTime)
+
+	if (segmentStarts(ENDING))
 	{
-		// currentRenderer = &rayTracedRenderer;
+		depthOfFieldEnabled = false;
+		swirlEnabled = false;
 		reflexLensEnabled = false;
 		raysPerPixel = 4;
-		rayTracedRenderer.focusOnPixel(313, 231);
+		currentRenderer = &pointCloudRenderer;
+		WireframeBool = false;
+	}
+	if (inSegment(ENDING))
+	{
+		placeCamera(glm::mix(WIDE_POSITION, glm::vec3(0.0f, 0.0f, 6.0f), easedProgress(ENDING)), SCENE_CENTRE);
+	}
+	if (ANIMATION_RASTER_PREVIEW)
+	{
+		currentRenderer = &pointCloudRenderer;
+		if (!inSegment(WIREFRAME_FLY_IN))
+		{
+			WireframeBool = false;
+		}
 	}
 
 	animationTick++;
