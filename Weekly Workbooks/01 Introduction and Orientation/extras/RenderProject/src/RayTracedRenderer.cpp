@@ -106,7 +106,7 @@ constexpr float REFLEX_RADIUS = 0.5f;             // Radius for the reflex lens 
 constexpr float SWIRL_FACTOR = 4.0f;              // Factor for the swirl effect
 constexpr int SHADOW_GRID = 8;                    // Grid size for soft shadows
 constexpr int MAX_REFRACTION_RECURSION_DEPTH = 6; // Maximum recursion depth for refraction rays
-constexpr int NUMBER_OF_PHOTONS = 100000;         // Number of photons to trace for photon mapping
+constexpr int NUMBER_OF_PHOTONS = 125000;         // Number of photons to trace for photon mapping
 constexpr int MAX_PHOTON_RECURSION_DEPTH = 8;     // Maximum recursion depth for photon tracing
 constexpr float CAUSTIC_RADIUS = 0.04f;           // Radius for caustic photon gathering
 constexpr float GLOBAL_RADIUS = 0.16f;            // Radius for global photon gathering
@@ -180,6 +180,8 @@ static glm::vec3 computeBeerLambertTransmission(const glm::vec3 &absorption, flo
         std::exp(-absorption.z * distance));
 }
 
+// Returns a percentage of light returned based on how much of the light the point can see
+// If it goes through refracted objects then it gets tinted 
 static glm::vec3 howOccluded(const glm::vec3 &origin, const glm::vec3 &direction, float maxDistance)
 {
     static thread_local std::vector<hitShadow> hits;
@@ -312,6 +314,7 @@ static float specularPower(float specularPowerValue) //
 }
 
 // Use MATHS?!?
+// Inverse square law
 static float lightFalloff(float distanceSquared)
 {
     return LIGHT_INTENSITY / (4.0f * RAY_TRACED_PI * distanceSquared);
@@ -561,6 +564,7 @@ void RayTracedRenderer::draw(DrawingWindow &window)
                 {
                     continue;
                 }
+                
                 window.setPixelColour(x, y, photonColours[mapIndex]);
             }
         }
@@ -1121,6 +1125,7 @@ Colour RayTracedRenderer::mirrorredRay(const RayTriangleIntersection &intersecti
     return attenuateColour(reflectedColour, mediumAbsorption, distanceThroughMedium);
 }
 
+// Used for squasing a 2-D grid 
 static glm::vec2 squashGrid(float u, float v)
 {
     float x = 2.0f * u - 1.0f;
@@ -1130,16 +1135,21 @@ static glm::vec2 squashGrid(float u, float v)
         y * std::sqrt(std::max(0.0f, 1.0f - 0.5f * x * x)));
 }
 
+// Tracks a ray after a mettalic hit
 Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool insideMedium, float distanceThroughMedium)
 {
+    // Assign a triangle variable for ease of access 
     const ModelTriangle &triangle = intersection.intersectedTriangle;
 
+    // If the normal is facing the wrong way, we flip it
     glm::vec3 faceNormal = triangle.normal;
     if (glm::dot(direction, faceNormal) > 0.0f)
     {
         faceNormal = -faceNormal;
     }
 
+
+    // This is just a sync checker 
     if (intersection.triangleIndex >= vertexNormalsByTriangle.size())
     {
         // Fall back to mirror shading if something is out of sync
@@ -1160,6 +1170,7 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
     {
         normal = glm::normalize(interpolatedNormal);
 
+        // Flip the normal if its facing the wrong way 
         if (glm::dot(direction, normal) > 0.0f)
         {
             normal = -normal;
@@ -1175,30 +1186,40 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
     // Count the number of valid samples that contribute to the final colour
     int validSamples = 0;
 
+    // Seeding is used to avoid shimmering on movement
     int seedX = static_cast<int>(std::round(intersection.intersectionPoint.x * 1000.0f));
     int seedY = static_cast<int>(std::round(intersection.intersectionPoint.y * 1000.0f));
     int seedZ = static_cast<int>(std::round(intersection.intersectionPoint.z * 1000.0f));
 
+    // Build in seed stuff from c++ 
+    // Uniform distribution for an even spread
     std::seed_seq seed{seedX, seedY, seedZ};
     std::mt19937 generator(seed);
     std::uniform_real_distribution<float> localDistribution(0.0f, 1.0f);
 
+    // Flip the up vector if we are too parallel 
     glm::vec3 helperUp = glm::vec3(0.0f, 1.0f, 0.0f);
     if (std::abs(reflectedDirection.y) > 0.999f)
     {
         helperUp = glm::vec3(0.0f, 0.0f, 1.0f);
     }
 
+    // Tangents and bitangent to get random points to face the correct way
     glm::vec3 tangent = glm::normalize(glm::cross(helperUp, reflectedDirection));
     glm::vec3 bitangent = glm::cross(reflectedDirection, tangent);
 
+    // Checking that we have roughness
     const bool isRoughPrimary = (depth == 0 && triangle.roughness > 0.01f);
+
+    // With no roughness we have a grid size of 1
     int gridSize = 1;
     if (isRoughPrimary)
     {
         gridSize = 4;
     }
 
+    // Stretch factor for brushed metals
+    // Stretching out one axis more than the other should give a lined look
     float stretchFactorX = 1.0f;
     float stretchFactorY = 1.0f;
     if (triangle.stretchFactor > 1.0f)
@@ -1207,29 +1228,38 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
         stretchFactorY = 0.5f;
     }
 
-    for (int index = 0; index < gridSize; index++)
+    // We loop over the grid size as if it were a square
+    for (int i = 0; i < gridSize; i++)
     {
         for (int j = 0; j < gridSize; j++)
         {
+            // Fuzzy direction used for roughness 
             glm::vec3 fuzzyDirection = reflectedDirection;
 
+            // If its not rough then we dont need to do anything to do with randomness
             if (isRoughPrimary)
             {
-                float u = (index + localDistribution(generator)) / static_cast<float>(gridSize);
+                // Using localised random means there is no shimmer
+                float u = (i + localDistribution(generator)) / static_cast<float>(gridSize);
                 float v = (j + localDistribution(generator)) / static_cast<float>(gridSize);
 
+                // Squash our grid down
                 glm::vec2 disk = squashGrid(u, v);
+                // Multiply by our roughness and stretchFactor
                 float dx = disk.x * triangle.roughness * stretchFactorX;
                 float dy = disk.y * triangle.roughness * stretchFactorY;
 
+                // Fuzz the direction using our locally random values
                 fuzzyDirection = glm::normalize(reflectedDirection + tangent * dx + bitangent * dy);
             }
 
+            // If the direction comes out parallel then we do not need to trace the ray any further
             if (glm::dot(fuzzyDirection, faceNormal) <= 0.0f)
             {
                 continue;
             }
 
+            // Send it back through trace ray NOT metallic ray as we do not know what we are going to hit 
             Colour sampleColour = traceRay(
                 intersection.intersectionPoint + faceNormal * SURFACE_OFFSET,
                 fuzzyDirection,
@@ -1237,7 +1267,10 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
                 mediumAbsorption,
                 insideMedium);
 
+            // Accumulate this colour to get our "fuzz"
             accumulatedColour += glm::vec3(sampleColour.red, sampleColour.green, sampleColour.blue);
+            // We add the valid samples count
+            // Because there is a chance that our sample is not valid
             validSamples++;
         }
     }
@@ -1246,6 +1279,7 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
     if (validSamples > 0)
         accumulatedColour /= static_cast<float>(validSamples);
 
+    // No valid samples = regular ray out
     if (validSamples == 0)
     {
         Colour sampleColour = traceRay(
@@ -1256,14 +1290,17 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
             insideMedium);
         accumulatedColour = glm::vec3(sampleColour.red, sampleColour.green, sampleColour.blue);
     }
-    // Apply Conductor Fresnel tint
-    // Calculate the cosine of the angle between the incident direction and the surface normal, clamped to [0, 1]
+    
+    // Appling fresnel tint
+    // Calculate the cosine angle
     float cosTheta = glm::clamp(glm::dot(-direction, normal), 0.0f, 1.0f);
-    // Calculate the Fresnel tint using the Fresnel-Schlick approximation for metallic surfaces
+    // Calculate the Fresnel tint using the Fresnel-Schlick approximation for metallic surface
     glm::vec3 fresnelTint = fresnelSchlickMetallic(cosTheta, triangle.fresnelReflectance);
 
+    // Create a vec3 for light results
     std::vector<glm::vec3> sampledLightResult;
 
+    // If our soft shadows are on then the light must be taken from the area
     if (softShadowsEnabled && lightMin != lightMax)
     {
         sampledLightResult = sampleAreaLight(
@@ -1280,8 +1317,10 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
             lightPosition);
     }
 
+    // Specular for the result
     glm::vec3 directSpecular = sampledLightResult[1];
 
+    // Glossyness to account for roughness
     float glossyFactor = std::max(1.0f - triangle.roughness, 0.05f);
     float glossyScale = glossyFactor * glossyFactor;
 
@@ -1294,6 +1333,7 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
     return attenuateColour(tintedColour, mediumAbsorption, distanceThroughMedium);
 }
 
+// Tracing rays that have last encountered a refracted material
 Colour RayTracedRenderer::refractedRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool entering, float distanceThroughMedium)
 {
     // Get the intersected triangle and the intersection point for further processing
@@ -1585,26 +1625,27 @@ static glm::vec3 randomDownwardDirection()
 }
 
 // Generate a random direction in the hemisphere defined by the given normal vector
-// Given by intellisense
 static glm::vec3 randomHemisphereDirection(const glm::vec3 &normal)
 {
-    glm::vec3 direction;
-    do
-    {
-        direction = glm::vec3(
-            2.0f * randomFloat() - 1.0f,
-            2.0f * randomFloat() - 1.0f,
-            2.0f * randomFloat() - 1.0f);
-    } while (glm::dot(direction, direction) > 1.0f || glm::dot(direction, direction) < 1e-8f);
+    glm::vec3 direction = randomDownwardDirection();
+    
+    glm::vec3 worldUp(1.0f, 0.0f, 0.0f);
 
-    direction = glm::normalize(direction);
-    if (glm::dot(direction, normal) < 0.0f)
-    {
-        return -direction;
+    if (std::abs(normal.z) < 0.999f){
+        worldUp = glm::vec3(0.0f, 0.0f, 1.0f);
     }
-    return direction;
+
+    glm::vec3 tangent = glm::normalize(glm::cross(worldUp, normal));
+    glm::vec3 bitangent = glm::cross(normal, tangent);
+
+    return tangent * direction.x + (-normal) * direction.y + bitangent * direction.z;
 }
 
+// Function that can be called recursively to trace a photons life cycle
+// Tracking its orgin, direction and power every new bounce
+// Uses bools to tell what object it came from and is currently travelling through
+// Cut off at a certain depth tracked by two ints
+// Photons are added to caustic or global photon map depending on which materials they have experienced in their cycle
 void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::vec3 power, bool insideMedium, bool cameFromSpecular, int depth, int diffuseDepth)
 {
     // If the recursion depth exceeds the maximum allowed depth, return to avoid infinite recursion
@@ -1612,6 +1653,7 @@ void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::
     {
         return;
     }
+
     // Get the closest valid intersection for the photon ray
     RayTriangleIntersection intersection = getClosestValidIntersection(origin, direction);
 
@@ -1781,7 +1823,18 @@ void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::
     }
 
     glm::vec3 surfaceColour = glm::vec3(colour.red, colour.green, colour.blue) / 255.0f;
-    float survival = std::max(surfaceColour.r, std::max(surfaceColour.g, surfaceColour.b));
+
+    // Survival according to the largest channel 
+    glm::vec3 reflectedPower = power * surfaceColour;
+
+    float maxPhotonIn = std::max(power.r, std::max(power.g, power.b));
+    float maxPhotonOut = std::max(reflectedPower.r, std::max(reflectedPower.g, reflectedPower.b));
+
+    float survival = 0.0f;
+
+    if (maxPhotonIn > 0.0f){
+        survival = std::min(1.0f, maxPhotonOut / maxPhotonIn);
+    }
 
     // If the random float is greater than or equal to the survival probability, return to terminate the photon tracing
     if (survival <= 0.0f || randomFloat() >= survival)
@@ -1789,11 +1842,13 @@ void RayTracedRenderer::tracePhoton(glm::vec3 origin, glm::vec3 direction, glm::
         return;
     }
     // Attenuate the power of the photon based on the surface colour and survival probability
+    // This is done to reduce the power of photon to simulate real life photon energy loss
     power = power * surfaceColour / survival;
 
     // Generate a new random direction in the hemisphere defined by the surface normal for diffuse reflection
     glm::vec3 newDirection = randomHemisphereDirection(surfaceNormal);
 
+    // Scale power by 2 * cosine(theta) to account for falloff
     power *= 2.0f * glm::dot(newDirection, surfaceNormal);
 
     tracePhoton(intersection.intersectionPoint + surfaceNormal * SURFACE_OFFSET, newDirection, power, false, false, depth + 1, diffuseDepth + 1);
