@@ -100,8 +100,8 @@ constexpr float RAY_TRACED_PI = 3.14159265358979323846f;
 constexpr float IMAGE_SCALE = 500.0f;             // Scale for the image plane
 constexpr float LIGHT_INTENSITY = 20.0f;          // Intensity of the light source
 constexpr float AMBIENT = 0.25f;                  // Ambient light intensity
-constexpr float SKY_COLOUR_MISS = 0.05f;          // Ambient light intensity if missed
-constexpr int SPECULAR_EXPONENT_LOG2 = 5;         // Log2 of the specular exponent for Phong shading
+constexpr float SKY_COLOUR_MISS = 0.05f;          // Ambient light intensity if missed when enviroment is off
+constexpr int SPECULAR_EXPONENT_LOG2 = 5;         // Log2 of the specular exponent
 constexpr float REFLEX_RADIUS = 0.5f;             // Radius for the reflex lens effect
 constexpr float SWIRL_FACTOR = 4.0f;              // Factor for the swirl effect
 constexpr int SHADOW_GRID = 8;                    // Grid size for soft shadows
@@ -190,7 +190,6 @@ static glm::vec3 howOccluded(const glm::vec3 &origin, const glm::vec3 &direction
 
         // Calculate the distance to the intersection point if the ray intersects with the triangle
         float triangleDistance;
-        // If the ray intersects with the triangle and the intersection point is closer than the maximum distance, return true (occluded)
         if (!intersectTriangle(triangle, origin, direction, triangleDistance) || triangleDistance >= maxDistance)
         {
             continue;
@@ -321,7 +320,7 @@ static float lightFalloff(float distanceSquared)
 // Calculating the light sample for a given point
 static std::vector<glm::vec3> sampleLight(const glm::vec3 &origin, const glm::vec3 &shadingNormal, const glm::vec3 &viewDir, const glm::vec3 &target)
 {
-    // Create empty vector
+    // Create two zero vectors
     glm::vec3 diffuse(0.0f);
     glm::vec3 specular(0.0f);
 
@@ -855,11 +854,14 @@ Colour RayTracedRenderer::sampleTexture(const TextureMap &texture, float u, floa
 }
 
 // Random point in a circle for depth of field effect
-// Given by Intellisense the moment i started typing
 glm::vec2 RayTracedRenderer::randomPointInCircle(float radius)
 {
-    float random = radius * std::sqrt(randomFloat());   // Square root for uniform distribution in circle
-    float theta = 2.0f * RAY_TRACED_PI * randomFloat(); // Random angle
+    // Get a random distance along the radius
+    float randomFloatSquareRoot = std::sqrt(randomFloat());
+    float random = radius * randomFloatSquareRoot;
+
+    // Get a random angle
+    float theta = 2.0f * RAY_TRACED_PI * randomFloat();
 
     return glm::vec2(random * std::cos(theta), random * std::sin(theta));
 }
@@ -955,8 +957,9 @@ Colour RayTracedRenderer::depthOfFieldShading(float u, float v, const glm::vec3 
         }
 
         // New camera position based on the random offset in the lens plane
-        // This line was given by Intellisense
-        glm::vec3 origin = cameraPosition + right * randomOffset.x + up * randomOffset.y;
+        glm::vec3 rightOffset = right * randomOffset.x;
+        glm::vec3 upOffset = up * randomOffset.y;
+        glm::vec3 origin = cameraPosition + rightOffset + upOffset;
         glm::vec3 direction = glm::normalize(focalPoint - origin);
 
         Colour pixelColour = traceRay(origin, direction, 0);
@@ -1129,7 +1132,6 @@ static glm::vec2 squashGrid(float u, float v)
 
 Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersection, const glm::vec3 &direction, int depth, const glm::vec3 &mediumAbsorption, bool insideMedium, float distanceThroughMedium)
 {
-    // Calculate the reflected direction using the given reflection formula
     const ModelTriangle &triangle = intersection.intersectedTriangle;
 
     glm::vec3 faceNormal = triangle.normal;
@@ -1140,7 +1142,7 @@ Colour RayTracedRenderer::mettalicRay(const RayTriangleIntersection &intersectio
 
     if (intersection.triangleIndex >= vertexNormalsByTriangle.size())
     {
-        // Fall back to flat shading if something is out of sync
+        // Fall back to mirror shading if something is out of sync
         return mirrorredRay(intersection, direction, depth, mediumAbsorption, insideMedium, distanceThroughMedium);
     }
     // Get the vertex normals for the triangle and calculate the barycentric weights
@@ -1397,7 +1399,6 @@ Colour RayTracedRenderer::traceRay(const glm::vec3 &origin, const glm::vec3 &dir
     // Get the closest valid intersection for the ray
     RayTriangleIntersection intersection = getClosestValidIntersection(origin, direction);
 
-    // If no intersection is found or the intersection is behind the camera, return the appropriate colour based on whether the ray is inside a medium or not
     if (intersection.distanceFromCamera <= 0)
     {
 

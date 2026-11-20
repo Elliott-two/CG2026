@@ -72,7 +72,6 @@ bool environmentMapSeenByCamera = false;
 
 // Photon mapping -
 // When Refractive materials are on - Globals and Caustics can be seen
-// When Refractive materials are off - Only Globals can be seen
 bool photonMappingEnabled = false;
 
 // Photon debugging - When true, the camera can only see the photons
@@ -83,6 +82,7 @@ bool softShadowsEnabled = false;
 
 // PI used within the main file
 // Ran into some problems with it declared over one file
+// Each file now has its own named PI
 constexpr float MAIN_PI = 3.14159265358979323846f;
 
 // Time variable for water animation speed
@@ -258,7 +258,7 @@ void setAbsorptionForObject(const std::string &objectName, const glm::vec3 &abso
 // For every colour, create a material to help change them easier
 void registerPaletteColoursAsMaterials()
 {
-	// Default to stop erros
+	// Plain materials
 	const MaterialProperties defaultProperties = {
 		false, false, false, false, 0.0f, 1.0f, 1.0f, glm::vec3(1.0f), glm::vec3(0.0f)};
 
@@ -280,6 +280,7 @@ void loadTexture(const std::string &materialName, const std::string &path)
 // LookAt forces the camera to look at the world center
 void lookAt(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, const glm::vec3 &target)
 {
+	// The direction from the taret back to the camera
 	glm::vec3 forwardVector = cameraPosition - target;
 	// If the distance between the camera position and the target is very very small, we can simply return
 	if (glm::length(forwardVector) < 1e-5f)
@@ -288,7 +289,6 @@ void lookAt(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, const glm::
 	}
 
 	// Calculate the forward vector
-	// The vector between the camera
 	glm::vec3 forward = glm::normalize(forwardVector);
 
 	// The worldUp vector, positive Y means up
@@ -297,6 +297,7 @@ void lookAt(glm::vec3 &cameraPosition, glm::mat3 &cameraOrientation, const glm::
 	// Check if our forward vectors y coordinate is very close to 1
 	// if so our world up becomes positive Z
 	// This prevents division by 0
+	// Without this almost parallel cross product is nearly zero
 	if (std::abs(forward.y) > 0.999f)
 	{
 		worldUp = glm::vec3(0.0f, 0.0f, 1.0f);
@@ -1175,6 +1176,8 @@ std::vector<ModelTriangle> triangleParseOBJ(const std::string &filename, float s
 std::array<glm::vec3, 3> vertexNormals(const ModelTriangle &triangle)
 {
 	// Change the smooth based on object
+	// Sphere averages all faces
+	// Others only average within 45 degrees
 	float smoothThreshold = std::cos(glm::radians(45.0f));
 
 	// Sphere always smooths out
@@ -1201,9 +1204,9 @@ std::array<glm::vec3, 3> vertexNormals(const ModelTriangle &triangle)
 			}
 
 			// Calculate the normal of the other triangle
-			glm::vec3 crossProduct1 = other.vertices[1] - other.vertices[0];
-			glm::vec3 crossProduct2 = other.vertices[2] - other.vertices[0];
-			glm::vec3 otherNormal = glm::normalize(glm::cross(crossProduct1, crossProduct2));
+			glm::vec3 edge1 = other.vertices[1] - other.vertices[0];
+			glm::vec3 edg2 = other.vertices[2] - other.vertices[0];
+			glm::vec3 otherNormal = glm::normalize(glm::cross(edge1, edg2));
 
 			// Check if the angle between the normals is within the smooth threshold
 			// If the dot product is greater than the threshold, they are considered smooth
